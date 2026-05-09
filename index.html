@@ -55,14 +55,14 @@
 
         .layout-pattern-0 {
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: minmax(220px, 1.25fr) 2fr;
+            grid-template-rows: minmax(275px, max-content) 1fr;
             grid-template-areas: 
                 "current summary"
                 "graph graph";
         }
         .layout-pattern-1 {
             grid-template-columns: 1fr 1fr;
-            grid-template-rows: 2fr minmax(220px, 1.25fr);
+            grid-template-rows: 1fr minmax(275px, max-content);
             grid-template-areas: 
                 "graph graph"
                 "current summary";
@@ -137,10 +137,10 @@
                 <!-- BG & Trend -->
                 <div class="flex flex-col items-center justify-center">
                     <div class="flex items-center gap-2">
-                        <div id="current-bg" class="text-7xl lg:text-8xl font-black tabular-nums tracking-tighter leading-none" style="text-shadow: 0 0 20px rgba(0,0,0,0.5);">---</div>
-                        <div id="trend-arrow" class="text-5xl lg:text-6xl font-black leading-none" style="text-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>
+                        <div id="current-bg" class="text-8xl lg:text-9xl font-black tabular-nums tracking-tighter leading-none" style="text-shadow: 0 0 20px rgba(0,0,0,0.5);">---</div>
+                        <div id="trend-arrow" class="text-6xl lg:text-7xl font-black leading-none" style="text-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>
                     </div>
-                    <div id="bg-delta" class="text-lg lg:text-xl text-slate-400 mt-1 font-medium">--</div>
+                    <div id="bg-delta" class="text-xl lg:text-2xl text-slate-400 mt-1 font-medium">--</div>
                 </div>
 
                 <!-- IOB / COB & Res/CAGE -->
@@ -165,125 +165,147 @@
 
         <div class="panel area-summary cursor-pointer relative group flex flex-col min-h-0" id="summary-panel" onclick="toggleSummary()">
             <!-- Hover Hint -->
-            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-10 border border-slate-600">
+            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-10 border border-slate-600 z-50">
                 Tap to toggle AGP
             </div>
 
-            <!-- VIEW 1: Default Summary -->
-            <div id="summary-default" class="flex-1 flex flex-col min-h-0">
-                <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1.5 flex-none pl-1">
-                    <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Summary <span class="text-[11px] font-normal text-slate-400">(Today vs 7-Days)</span>
-                </h2>
-                
-                <div class="flex-1 flex gap-3 min-h-0 mt-1">
-                    <!-- TIR Visualizer -->
-                    <div class="w-20 bg-slate-800/40 rounded border border-slate-700/40 p-1 flex flex-col items-center justify-between min-h-0">
-                        <div class="flex justify-around w-full px-1 mb-1">
-                            <span class="text-[9px] font-bold text-slate-300">Today</span>
-                            <span class="text-[9px] font-bold text-slate-400">7 Days</span>
-                        </div>
-                        <div class="flex-1 flex justify-around w-full items-end pb-1 min-h-0">
-                            <div class="flex flex-col items-center h-full w-4">
-                                <div class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700/50">
-                                    <div id="td-tar" class="bg-yellow-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                    <div id="td-tir" class="bg-green-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                    <div id="td-tbr" class="bg-red-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                </div>
-                                <span id="td-tir-val" class="text-[9px] font-black text-green-400 mt-1.5 leading-none">0%</span>
+            <div class="flex-1 flex gap-3 min-h-0 w-full h-full">
+                <!-- SHARED TIR Visualizer -->
+                <div class="w-20 bg-slate-800/40 rounded border border-slate-700/40 p-1 flex flex-col items-center justify-between min-h-0 flex-none">
+                    <div class="flex justify-around w-full px-1 mb-1 flex-none">
+                        <span class="text-[9px] font-bold text-slate-300">Today</span>
+                        <span class="text-[9px] font-bold text-slate-400">7 Days</span>
+                    </div>
+                    <div class="flex-1 flex justify-around w-full items-end pb-1 min-h-0">
+                        <div class="flex flex-col items-center h-full w-4">
+                            <div class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700/50">
+                                <div id="td-tar" class="bg-yellow-500 w-full transition-all duration-1000" style="height: 0%"></div>
+                                <div id="td-tir" class="bg-green-500 w-full transition-all duration-1000" style="height: 0%"></div>
+                                <div id="td-tbr" class="bg-red-500 w-full transition-all duration-1000" style="height: 0%"></div>
                             </div>
-                            <div class="flex flex-col items-center h-full w-4 opacity-80">
-                                <div class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700/50">
-                                    <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                    <div id="7d-tir" class="bg-green-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                    <div id="7d-tbr" class="bg-red-500 w-full transition-all duration-1000" style="height: 0%"></div>
+                            <span id="td-tir-val" class="text-[9px] font-black text-green-400 mt-1.5 leading-none">0%</span>
+                        </div>
+                        <div class="flex flex-col items-center h-full w-4 opacity-80">
+                            <div class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700/50">
+                                <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-1000" style="height: 0%"></div>
+                                <div id="7d-tir" class="bg-green-500 w-full transition-all duration-1000" style="height: 0%"></div>
+                                <div id="7d-tbr" class="bg-red-500 w-full transition-all duration-1000" style="height: 0%"></div>
+                            </div>
+                            <span id="7d-tir-val" class="text-[9px] font-black text-green-500 mt-1.5 leading-none">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- RIGHT CONTENT (TOGGLEABLE) -->
+                <div class="flex-1 flex flex-col min-h-0 relative">
+                    
+                    <!-- VIEW 1: Default Summary -->
+                    <div id="summary-default" class="flex flex-col min-h-0 w-full h-full">
+                        <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1.5 flex-none pl-1">
+                            <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Summary <span class="text-[11px] font-normal text-slate-400">(Today vs 7-Days)</span>
+                        </h2>
+                        
+                        <!-- Metrics Table -->
+                        <div class="flex-1 flex flex-col bg-slate-800/30 rounded border border-slate-700/40 px-2 py-1.5 min-h-0 justify-between gap-0.5">
+                            <div class="grid grid-cols-[auto_1fr_1fr] items-end border-b border-slate-700/50 pb-0.5 flex-none">
+                                <div class="w-16"></div>
+                                <div class="text-center text-[11px] font-bold text-slate-300">Today</div>
+                                <div class="text-center text-[11px] font-bold text-slate-400">7 Days</div>
+                            </div>
+
+                            <div class="grid grid-cols-[auto_1fr_1fr] items-center flex-1">
+                                <div class="w-16 text-[11px] text-slate-400 font-semibold tracking-wide">AVG BG</div>
+                                <div class="text-center text-lg font-black text-slate-200"><span id="td-mean">0</span></div>
+                                <div class="text-center text-lg font-bold text-slate-400"><span id="7d-mean">0</span></div>
+                            </div>
+
+                            <div class="flex flex-col bg-blue-900/10 rounded py-1 px-1 flex-[1.5] justify-center">
+                                <div class="grid grid-cols-[auto_1fr_1fr] items-center mb-0.5">
+                                    <div class="w-16 text-[11px] text-blue-400 font-bold tracking-wide pl-1">TDD</div>
+                                    <div class="text-center text-xl font-black text-blue-300"><span id="td-tdd">0.0</span><span class="text-[10px] font-normal ml-0.5">U</span></div>
+                                    <div class="text-center text-lg font-bold text-blue-300/70"><span id="7d-tdd">0.0</span></div>
                                 </div>
-                                <span id="7d-tir-val" class="text-[9px] font-black text-green-500 mt-1.5 leading-none">0%</span>
+                                
+                                <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 px-1">
+                                    <div class="w-16"></div>
+                                    <div class="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-800">
+                                        <div id="td-basal-bar" class="bg-slate-400 h-full"></div><div id="td-smb-bar" class="bg-purple-500 h-full"></div><div id="td-bolus-bar" class="bg-cyan-400 h-full"></div>
+                                    </div>
+                                    <div class="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-800 opacity-60">
+                                        <div id="7d-basal-bar" class="bg-slate-400 h-full"></div><div id="7d-smb-bar" class="bg-purple-500 h-full"></div><div id="7d-bolus-bar" class="bg-cyan-400 h-full"></div>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 px-1 mt-1">
+                                    <div class="w-16"></div>
+                                    <div class="flex justify-between px-0.5">
+                                        <div class="text-center leading-none"><div class="text-[9px] text-slate-500 mb-0.5">Basal</div><div id="td-basal" class="text-[10px] font-bold text-slate-300">0.0</div></div>
+                                        <div class="text-center leading-none"><div class="text-[9px] text-purple-500/80 mb-0.5">SMB</div><div id="td-smb" class="text-[10px] font-bold text-purple-400">0.0</div></div>
+                                        <div class="text-center leading-none"><div class="text-[9px] text-cyan-500/80 mb-0.5">Bolus</div><div id="td-bolus" class="text-[10px] font-bold text-cyan-300">0.0</div></div>
+                                    </div>
+                                    <div class="flex justify-between px-0.5 opacity-80">
+                                        <div class="text-center leading-none"><div class="text-[9px] text-slate-500 mb-0.5">Basal</div><div id="7d-basal" class="text-[10px] font-bold text-slate-300">0.0</div></div>
+                                        <div class="text-center leading-none"><div class="text-[9px] text-purple-500/80 mb-0.5">SMB</div><div id="7d-smb" class="text-[10px] font-bold text-purple-400">0.0</div></div>
+                                        <div class="text-center leading-none"><div class="text-[9px] text-cyan-500/80 mb-0.5">Bolus</div><div id="7d-bolus" class="text-[10px] font-bold text-cyan-300">0.0</div></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- CARBS Row -->
+                            <div class="grid grid-cols-[auto_1fr_1fr] items-center flex-1">
+                                <div class="w-16 text-[11px] text-yellow-500 font-semibold tracking-wide">CARBS</div>
+                                <div class="text-center text-lg font-black text-yellow-400"><span id="td-carbs">0</span><span class="text-[10px] font-normal ml-0.5">g</span></div>
+                                <div class="text-center text-lg font-bold text-yellow-500/70"><span id="7d-carbs">0</span></div>
+                            </div>
+
+                            <!-- CR Row -->
+                            <div class="grid grid-cols-[auto_1fr_1fr] items-center flex-1 border-t border-slate-700/30 pt-0.5 mt-0.5">
+                                <div class="w-16 flex flex-col leading-none">
+                                    <span class="text-[11px] text-orange-400 font-bold tracking-wide">EST. CR</span>
+                                    <span class="text-[9px] text-orange-500/70 mt-0.5">Bolus / +SMB</span>
+                                </div>
+                                <div class="text-center text-[13px] font-black text-orange-300">
+                                    <span id="td-cr-bolus">0.0</span><span class="text-slate-500 mx-0.5 font-medium">/</span><span id="td-cr-total">0.0</span>
+                                </div>
+                                <div class="text-center text-[13px] font-bold text-orange-400/70">
+                                    <span id="7d-cr-bolus">0.0</span><span class="text-slate-500 mx-0.5 font-medium">/</span><span id="7d-cr-total">0.0</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Metrics Table -->
-                    <div class="flex-1 flex flex-col bg-slate-800/30 rounded border border-slate-700/40 px-3 py-1.5 min-h-0 justify-around">
-                        <div class="grid grid-cols-[auto_1fr_1fr] items-end border-b border-slate-700/50 pb-1 mb-1">
-                            <div class="w-16"></div>
-                            <div class="text-center text-[11px] font-bold text-slate-300">Today</div>
-                            <div class="text-center text-[11px] font-bold text-slate-400">7 Days</div>
-                        </div>
-
-                        <div class="grid grid-cols-[auto_1fr_1fr] items-center py-1">
-                            <div class="w-16 text-[11px] text-slate-400 font-semibold tracking-wide">AVG BG</div>
-                            <div class="text-center text-lg font-black text-slate-200"><span id="td-mean">0</span></div>
-                            <div class="text-center text-lg font-bold text-slate-400"><span id="7d-mean">0</span></div>
-                        </div>
-
-                        <div class="flex flex-col bg-blue-900/10 rounded py-1 my-1">
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-center mb-1">
-                                <div class="w-16 text-[11px] text-blue-400 font-bold tracking-wide">TDD</div>
-                                <div class="text-center text-xl font-black text-blue-300"><span id="td-tdd">0.0</span><span class="text-[10px] font-normal ml-0.5">U</span></div>
-                                <div class="text-center text-lg font-bold text-blue-300/70"><span id="7d-tdd">0.0</span></div>
-                            </div>
-                            
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 px-1">
-                                <div class="w-16"></div>
-                                <div class="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-800">
-                                    <div id="td-basal-bar" class="bg-slate-400 h-full"></div><div id="td-smb-bar" class="bg-purple-500 h-full"></div><div id="td-bolus-bar" class="bg-cyan-400 h-full"></div>
+                    <!-- VIEW 2: AGP -->
+                    <div id="summary-agp" class="hidden absolute inset-0 flex-col min-h-0 w-full h-full">
+                        <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1.5 flex-none pl-1">
+                            <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>Profiles <span class="text-[11px] font-normal text-slate-400">(Today vs 7-Days)</span>
+                        </h2>
+                        
+                        <div class="flex-1 flex flex-col min-h-0 w-full border border-slate-700/40 bg-slate-800/30 rounded">
+                            <!-- Today Profile with CV -->
+                            <div class="flex-1 flex relative w-full border-b border-slate-700/50 min-h-0">
+                                <div class="flex-1 relative min-h-0 p-1">
+                                    <canvas id="agpProfileChart"></canvas>
                                 </div>
-                                <div class="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-800 opacity-60">
-                                    <div id="7d-basal-bar" class="bg-slate-400 h-full"></div><div id="7d-smb-bar" class="bg-purple-500 h-full"></div><div id="7d-bolus-bar" class="bg-cyan-400 h-full"></div>
+                                <div class="w-12 flex flex-col items-center justify-center border-l border-slate-700/50 flex-none bg-slate-800/50 rounded-tr">
+                                    <span class="text-[9px] font-bold text-slate-400 leading-none">CV</span>
+                                    <div class="text-sm font-black text-slate-200 mt-1 leading-none"><span id="td-cv-agp">--</span><span class="text-[9px]">%</span></div>
                                 </div>
                             </div>
                             
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 px-1 mt-1">
-                                <div class="w-16"></div>
-                                <div class="flex justify-between px-0.5">
-                                    <div class="text-center leading-none"><div class="text-[9px] text-slate-500 mb-0.5">Basal</div><div id="td-basal" class="text-[10px] font-bold text-slate-300">0.0</div></div>
-                                    <div class="text-center leading-none"><div class="text-[9px] text-purple-500/80 mb-0.5">SMB</div><div id="td-smb" class="text-[10px] font-bold text-purple-400">0.0</div></div>
-                                    <div class="text-center leading-none"><div class="text-[9px] text-cyan-500/80 mb-0.5">Bolus</div><div id="td-bolus" class="text-[10px] font-bold text-cyan-300">0.0</div></div>
+                            <!-- 7-Days AGP with CV -->
+                            <div class="flex-1 flex relative w-full min-h-0">
+                                <div class="flex-1 relative min-h-0 p-1">
+                                    <canvas id="agpChart"></canvas>
                                 </div>
-                                <div class="flex justify-between px-0.5 opacity-80">
-                                    <div class="text-center leading-none"><div class="text-[9px] text-slate-500 mb-0.5">Basal</div><div id="7d-basal" class="text-[10px] font-bold text-slate-300">0.0</div></div>
-                                    <div class="text-center leading-none"><div class="text-[9px] text-purple-500/80 mb-0.5">SMB</div><div id="7d-smb" class="text-[10px] font-bold text-purple-400">0.0</div></div>
-                                    <div class="text-center leading-none"><div class="text-[9px] text-cyan-500/80 mb-0.5">Bolus</div><div id="7d-bolus" class="text-[10px] font-bold text-cyan-300">0.0</div></div>
+                                <div class="w-12 flex flex-col items-center justify-center border-l border-slate-700/50 flex-none bg-slate-800/50 rounded-br">
+                                    <span class="text-[9px] font-bold text-slate-400 leading-none">CV</span>
+                                    <div class="text-sm font-black text-slate-200 mt-1 leading-none"><span id="7d-cv-agp">--</span><span class="text-[9px]">%</span></div>
                                 </div>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-[auto_1fr_1fr] items-center py-1">
-                            <div class="w-16 text-[11px] text-yellow-500/90 font-semibold tracking-wide">CARBS</div>
-                            <div class="text-center text-xl font-black text-yellow-300"><span id="td-carbs">0</span><span class="text-[10px] font-normal ml-0.5">g</span></div>
-                            <div class="text-center text-lg font-bold text-yellow-300/70"><span id="7d-carbs">0</span></div>
-                        </div>
-
-                        <div class="grid grid-cols-[auto_1fr_1fr] items-center py-1 border-t border-slate-700/30 mt-auto">
-                            <div class="w-16 text-[10px] text-orange-400/80 font-semibold tracking-wide flex flex-col leading-none justify-center">
-                                <span>EST. CR</span>
-                                <span class="text-[7px] text-orange-500/60 mt-0.5">Bolus / +SMB</span>
-                            </div>
-                            <div class="text-center text-sm font-bold text-orange-300">
-                                <span id="td-cr-bolus">0.0</span><span class="text-[10px] text-slate-500 font-normal mx-0.5">/</span><span id="td-cr-total" class="text-xs text-orange-400/80">0.0</span><span class="text-[8px] font-normal ml-0.5 text-slate-500">g/U</span>
-                            </div>
-                            <div class="text-center text-xs font-bold text-orange-300/70">
-                                <span id="7d-cr-bolus">0.0</span><span class="text-[9px] text-slate-600 font-normal mx-0.5">/</span><span id="7d-cr-total" class="text-[10px] text-orange-400/60">0.0</span>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div id="summary-agp" class="flex-col hidden min-h-0 w-full h-full flex-1">
-                <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1.5 flex-none pl-1 border-b border-slate-700/50 pb-1">
-                    <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>Today's Glucose & AGP (7 Days)
-                </h2>
-                
-                <!-- Profile Chart -->
-                <div class="flex-1 relative w-full border-b border-slate-700/50 pb-1 min-h-0">
-                    <canvas id="agpProfileChart"></canvas>
-                </div>
-                
-                <!-- AGP Chart -->
-                <div class="flex-1 relative w-full min-h-0 pt-1">
-                    <canvas id="agpChart"></canvas>
-                </div>
             </div>
         </div>
 
@@ -364,16 +386,14 @@
         const agpEl = document.getElementById('summary-agp');
         
         if(agpMode) {
-            defEl.classList.add('hidden');
-            defEl.classList.remove('flex');
+            defEl.classList.add('invisible');
             agpEl.classList.remove('hidden');
             agpEl.classList.add('flex');
             drawAGPCharts();
         } else {
             agpEl.classList.add('hidden');
             agpEl.classList.remove('flex');
-            defEl.classList.remove('hidden');
-            defEl.classList.add('flex');
+            defEl.classList.remove('invisible');
         }
     }
 
@@ -486,9 +506,12 @@
 
     function showError(msg) {
         const errDiv = document.getElementById('error-message');
-        errDiv.textContent = msg; errDiv.classList.remove('hidden');
+        if(errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); }
     }
-    function hideError() { document.getElementById('error-message').classList.add('hidden'); }
+    function hideError() { 
+        const errDiv = document.getElementById('error-message');
+        if(errDiv) errDiv.classList.add('hidden'); 
+    }
 
     function mergeByKey(existing, incoming, keyFn) {
         const map = new Map();
@@ -513,7 +536,8 @@
         else fromDate.setMinutes(fromDate.getMinutes() - DELTA_LOOKBACK_MINUTES);
         
         const fromStr = fromDate.toISOString();
-        document.getElementById('last-update-time').textContent = 'Updating...';
+        const lastUpdateEl = document.getElementById('last-update-time');
+        if(lastUpdateEl) lastUpdateEl.textContent = 'Updating...';
 
         try {
             if(!state.data.profile || shouldFullFetch) {
@@ -543,7 +567,8 @@
                 updateUI();
 
                 const now = new Date();
-                document.getElementById('sync-time').textContent = `Sync: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
+                const syncEl = document.getElementById('sync-time');
+                if(syncEl) syncEl.textContent = `Sync: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
             }
         } catch(e) {
             console.error(e);
@@ -570,28 +595,33 @@
 
         const latest = entries[entries.length - 1];
         const currentBgEl = document.getElementById('current-bg');
-        currentBgEl.textContent = latest.sgv;
-        currentBgEl.className = currentBgEl.className.replace(/text-(red|yellow|green)-\d+/, '');
-        currentBgEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
+        if(currentBgEl) {
+            currentBgEl.textContent = latest.sgv;
+            currentBgEl.className = currentBgEl.className.replace(/text-(red|yellow|green)-\d+/, '');
+            currentBgEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
+        }
         
         const arrowEl = document.getElementById('trend-arrow');
-        arrowEl.textContent = getDirectionArrow(latest.direction);
-        arrowEl.className = arrowEl.className.replace(/text-(red|yellow|green)-\d+/, '');
-        arrowEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
+        if(arrowEl) {
+            arrowEl.textContent = getDirectionArrow(latest.direction);
+            arrowEl.className = arrowEl.className.replace(/text-(red|yellow|green)-\d+/, '');
+            arrowEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
+        }
         
         if(entries.length > 1) {
             const prev = entries[entries.length - 2];
             const delta = latest.sgv - prev.sgv;
-            document.getElementById('bg-delta').textContent = `${delta >= 0 ? '+' : ''}${delta} mg/dL`;
+            const deltaEl = document.getElementById('bg-delta');
+            if(deltaEl) deltaEl.textContent = `${delta >= 0 ? '+' : ''}${delta} mg/dL`;
         }
 
         const timeDiff = Math.floor((new Date() - new Date(latest.dateString)) / 60000);
-        document.getElementById('last-update-time').textContent = `${timeDiff} min ago`;
+        const lastUpdEl = document.getElementById('last-update-time');
+        if(lastUpdEl) lastUpdEl.textContent = `${timeDiff} min ago`;
 
         let iob = '--', cob = '--', res = '--', cage = '--';
         const ds = state.data.devicestatus;
         if(ds) {
-            // IOBを様々なアプリのデータ構造から探索
             let iobVal = undefined;
             if (ds.loop?.iob?.iob !== undefined) iobVal = ds.loop.iob.iob;
             else if (ds.pump?.iob?.iob !== undefined) iobVal = ds.pump.iob.iob;
@@ -600,7 +630,6 @@
             else if (typeof ds.iob === 'number') iobVal = ds.iob;
             if (iobVal !== undefined) iob = parseFloat(iobVal).toFixed(1);
 
-            // COBを様々なアプリのデータ構造から探索
             let cobVal = undefined;
             if (ds.loop?.cob?.cob !== undefined) cobVal = ds.loop.cob.cob;
             else if (ds.pump?.cob?.cob !== undefined) cobVal = ds.pump.cob.cob;
@@ -608,7 +637,6 @@
             else if (typeof ds.cob === 'number') cobVal = ds.cob;
             if (cobVal !== undefined) cob = parseFloat(cobVal).toFixed(0);
 
-            // リザーバー残量の探索
             let resVal = undefined;
             if (ds.pump?.reservoir !== undefined) resVal = ds.pump.reservoir;
             else if (ds.loop?.pump?.reservoir !== undefined) resVal = ds.loop.pump.reservoir;
@@ -622,10 +650,11 @@
             cage = hoursSince < 24 ? `${hoursSince.toFixed(1)}h` : `${(hoursSince/24).toFixed(1)}d`;
         }
 
-        document.getElementById('current-iob').textContent = iob;
-        document.getElementById('current-cob').textContent = cob;
-        document.getElementById('current-res').textContent = res;
-        document.getElementById('current-cage').textContent = cage;
+        const safeSetText = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text; };
+        safeSetText('current-iob', iob);
+        safeSetText('current-cob', cob);
+        safeSetText('current-res', res);
+        safeSetText('current-cage', cage);
 
         calculateSummaries();
         updateChart();
@@ -649,7 +678,7 @@
         const periodEntries = state.data.entries.filter(e => { const d = new Date(e.dateString); return d >= startDate && d < endDate; });
         const periodTreats = state.data.treatments.filter(t => { const d = new Date(t.created_at); return d >= startDate && d < endDate; });
 
-        let tbr = 0, tir = 0, tar = 0, sum = 0, mean = 0;
+        let tbr = 0, tir = 0, tar = 0, sum = 0, mean = 0, cv = 0, gmi = 0;
         const total = periodEntries.length;
         if(total > 0) {
             tbr = periodEntries.filter(e => e.sgv < 70).length / total * 100;
@@ -657,6 +686,12 @@
             tar = periodEntries.filter(e => e.sgv > 180).length / total * 100;
             periodEntries.forEach(e => sum += e.sgv);
             mean = sum / total;
+            
+            let sumSqDiff = 0;
+            periodEntries.forEach(e => sumSqDiff += Math.pow(e.sgv - mean, 2));
+            const sd = Math.sqrt(sumSqDiff / total);
+            cv = (sd / mean) * 100;
+            gmi = 3.31 + (0.02392 * mean);
         }
 
         let totalCarbs = 0, bolus = 0, smb = 0;
@@ -681,7 +716,7 @@
         const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
         const crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
 
-        return { tbr, tir, tar, carbs: totalCarbs, bolus, smb, basal, tdd, mean, crBolus, crTotal };
+        return { tbr, tir, tar, carbs: totalCarbs, bolus, smb, basal, tdd, mean, cv, gmi, crBolus, crTotal };
     }
 
     function calculateIntegralBasal(startDate, endDate, periodTreats) {
@@ -715,32 +750,37 @@
         return totalBasalUnits;
     }
 
+    function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if(el) el.style[prop] = val; }
+    function safeSetText(id, text) { const el = document.getElementById(id); if(el) el.textContent = text; }
+
     function renderStats(prefix, stats, days) {
-        document.getElementById(`${prefix}-tbr`).style.height = `${stats.tbr}%`;
-        document.getElementById(`${prefix}-tir`).style.height = `${stats.tir}%`;
-        document.getElementById(`${prefix}-tar`).style.height = `${stats.tar}%`;
-        document.getElementById(`${prefix}-tir-val`).textContent = `${Math.round(stats.tir)}%`;
+        safeSetStyle(`${prefix}-tbr`, 'height', `${stats.tbr}%`);
+        safeSetStyle(`${prefix}-tir`, 'height', `${stats.tir}%`);
+        safeSetStyle(`${prefix}-tar`, 'height', `${stats.tar}%`);
+        safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
 
         const tdd = stats.tdd / days;
         const basal = stats.basal / days;
         const bolus = stats.bolus / days;
         const smb = stats.smb / days;
 
-        document.getElementById(`${prefix}-tdd`).textContent = tdd.toFixed(1);
-        document.getElementById(`${prefix}-basal`).textContent = basal.toFixed(1);
-        document.getElementById(`${prefix}-smb`).textContent = smb.toFixed(1);
-        document.getElementById(`${prefix}-bolus`).textContent = bolus.toFixed(1);
-        document.getElementById(`${prefix}-smb`).textContent = smb.toFixed(1);
-        document.getElementById(`${prefix}-carbs`).textContent = Math.round(stats.carbs / days);
-        document.getElementById(`${prefix}-mean`).textContent = Math.round(stats.mean);
-        document.getElementById(`${prefix}-cr-bolus`).textContent = stats.crBolus.toFixed(1);
-        document.getElementById(`${prefix}-cr-total`).textContent = stats.crTotal.toFixed(1);
+        safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
+        safeSetText(`${prefix}-basal`, basal.toFixed(1));
+        safeSetText(`${prefix}-smb`, smb.toFixed(1));
+        safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
+        safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
+        safeSetText(`${prefix}-mean`, Math.round(stats.mean));
+
+        safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
+        safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
 
         if(tdd > 0) {
-            document.getElementById(`${prefix}-basal-bar`).style.width = `${(basal/tdd)*100}%`;
-            document.getElementById(`${prefix}-smb-bar`).style.width = `${(smb/tdd)*100}%`;
-            document.getElementById(`${prefix}-bolus-bar`).style.width = `${(bolus/tdd)*100}%`;
+            safeSetStyle(`${prefix}-basal-bar`, 'width', `${(basal/tdd)*100}%`);
+            safeSetStyle(`${prefix}-smb-bar`, 'width', `${(smb/tdd)*100}%`);
+            safeSetStyle(`${prefix}-bolus-bar`, 'width', `${(bolus/tdd)*100}%`);
         }
+
+        safeSetText(`${prefix}-cv-agp`, Math.round(stats.cv));
     }
 
     function drawAGPCharts() {
@@ -784,6 +824,16 @@
         Chart.defaults.color = '#64748b';
         Chart.defaults.font.family = 'Inter, sans-serif';
 
+        const targetAnnotation = { 
+            type: 'box', 
+            yMin: 70, yMax: 180, 
+            backgroundColor: 'rgba(74, 222, 128, 0.08)',
+            borderColor: 'rgba(74, 222, 128, 0.3)',
+            borderWidth: 1,
+            borderDash: [5, 5],
+            drawTime: 'beforeDraw' 
+        };
+
         // --- Render Today's Glucose Chart (Top) ---
         const todayStart = new Date();
         todayStart.setHours(0,0,0,0);
@@ -793,7 +843,10 @@
             return { x: d.getHours() + d.getMinutes() / 60, y: e.sgv };
         });
 
-        const ctxProf = document.getElementById('agpProfileChart').getContext('2d');
+        const ctxProfEl = document.getElementById('agpProfileChart');
+        if(!ctxProfEl) return;
+        const ctxProf = ctxProfEl.getContext('2d');
+        
         if(agpProfileChartInstance) agpProfileChartInstance.destroy();
         agpProfileChartInstance = new Chart(ctxProf, {
             type: 'scatter',
@@ -808,16 +861,14 @@
                 responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: { 
                     legend: { display: false }, tooltip: { enabled: false },
-                    annotation: { annotations: {
-                        target: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(255, 255, 255, 0.04)', borderWidth: 0, drawTime: 'beforeDraw' }
-                    }}
+                    annotation: { annotations: { target: targetAnnotation } }
                 },
                 layout: { padding: { left: 10, right: 10, top: 5, bottom: 0 } },
                 scales: {
                     x: {
                         type: 'linear', min: 0, max: 24,
-                        ticks: { display: false },
-                        grid: { color: 'rgba(51, 65, 85, 0.3)', drawBorder: false }
+                        ticks: { stepSize: 3, callback: v => v+':00', font: {size: 9} },
+                        grid: { color: 'rgba(51, 65, 85, 0.3)' }
                     },
                     y: {
                         min: 40, max: 300,
@@ -829,7 +880,10 @@
         });
 
         // --- Render AGP Chart (Bottom) ---
-        const ctxAgp = document.getElementById('agpChart').getContext('2d');
+        const ctxAgpEl = document.getElementById('agpChart');
+        if(!ctxAgpEl) return;
+        const ctxAgp = ctxAgpEl.getContext('2d');
+
         if(agpChartInstance) agpChartInstance.destroy();
         agpChartInstance = new Chart(ctxAgp, {
             type: 'line',
@@ -847,9 +901,7 @@
                 responsive: true, maintainAspectRatio: false, animation: false,
                 plugins: { 
                     legend: { display: false }, tooltip: { enabled: false },
-                    annotation: { annotations: {
-                        target: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(255, 255, 255, 0.04)', borderWidth: 0, drawTime: 'beforeDraw' }
-                    }}
+                    annotation: { annotations: { target: targetAnnotation } }
                 },
                 layout: { padding: { left: 10, right: 10, top: 0, bottom: 5 } },
                 scales: {
@@ -870,7 +922,9 @@
 
     function updateChart() {
         if(!state.data.entries.length) return;
-        const ctx = document.getElementById('bgChart').getContext('2d');
+        const ctxEl = document.getElementById('bgChart');
+        if(!ctxEl) return;
+        const ctx = ctxEl.getContext('2d');
         
         const targetEnd = new Date(); targetEnd.setDate(targetEnd.getDate() - state.offsetDays);
         const targetStart = new Date(targetEnd); targetStart.setHours(targetStart.getHours() - state.timeRangeHours);
@@ -951,12 +1005,13 @@
         const yBasalMax = Math.max(maxBasalVal * 6, 3); 
 
         function showTooltip(event, text, timeMs, colorClass) {
+            if(!tooltipEl) return;
             const d = new Date(timeMs);
             tooltipEl.innerHTML = `<div class="font-bold ${colorClass} mb-1">${text}</div><div class="text-slate-300 text-xs">${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}</div>`;
             tooltipEl.style.left = event.x + 'px'; tooltipEl.style.top = event.y + 'px';
             tooltipEl.classList.remove('hidden');
         }
-        function hideTooltip() { tooltipEl.classList.add('hidden'); }
+        function hideTooltip() { if(tooltipEl) tooltipEl.classList.add('hidden'); }
 
         if(chartInstance) chartInstance.destroy();
         Chart.defaults.color = '#64748b';
