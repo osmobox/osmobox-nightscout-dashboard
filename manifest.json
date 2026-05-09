@@ -1,0 +1,19 @@
+{
+
+  "name": "Nightscout Dashboard",
+
+  "short_name": "NS Dashboard",
+
+  "start_url": "./",
+
+  "scope": "./",
+
+  "display": "fullscreen",
+
+  "background_color": "#000000",
+
+  "theme_color": "#000000",
+
+  "orientation": "landscape"
+
+}
