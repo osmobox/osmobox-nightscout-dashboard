@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nightscout Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js & Plugins -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* 画面焼け防止: 背景色のゆっくりとした変化 */
+        @keyframes bg-breathe {
+            0% { background-color: #000000; }
+            50% { background-color: #0f172a; } /* 暗いスレート */
+            100% { background-color: #000000; }
+        }
+
+        body {
+            background-color: #000000;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* 絶対にスクロールさせない */
+            height: 100vh;
+            width: 100vw;
+            animation: bg-breathe 60s infinite alternate ease-in-out;
+            transition: filter 1s ease-in-out;
+            font-family: 'Inter', system-ui, sans-serif;
+        }
+
+        /* 画面焼け防止: ピクセルシフト用コンテナ */
+        #shift-container {
+            width: 100%;
+            height: 100%;
+            transition: transform 1s ease-in-out;
+        }
+
+        /* レイアウトの切り替え用 Grid設定 */
+        #grid-container {
+            display: grid;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            height: 100%;
+            width: 100%;
+            box-sizing: border-box;
+            transition: all 1s ease-in-out;
+        }
+
+        /* パターン0: グラフ下部 */
+        .layout-pattern-0 {
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: minmax(220px, 1fr) 2fr;
+            grid-template-areas: 
+                "current today seven"
+                "graph graph graph";
+        }
+
+        /* パターン1: グラフ上部 */
+        .layout-pattern-1 {
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 2fr minmax(220px, 1fr);
+            grid-template-areas: 
+                "graph graph graph"
+                "current today seven";
+        }
+
+        /* パターン2: グラフ左側 */
+        .layout-pattern-2 {
+            grid-template-columns: 2fr 1fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            grid-template-areas: 
+                "graph current"
+                "graph today"
+                "graph seven";
+        }
+
+        /* パターン3: グラフ右側 */
+        .layout-pattern-3 {
+            grid-template-columns: 1fr 2fr;
+            grid-template-rows: 1fr 1fr 1fr;
+            grid-template-areas: 
+                "current graph"
+                "today graph"
+                "seven graph";
+        }
+
+        /* 小さい画面用 (モバイル) の固定レイアウト */
+        @media (max-width: 768px) {
+            #grid-container {
+                display: flex;
+                flex-direction: column;
+                overflow-y: auto; /* モバイルの時だけはスクロール許可 */
+            }
+            .area-graph { min-height: 250px; flex: 1; }
+            .area-current { min-height: 180px; }
+            .panel { flex: none; }
+        }
+
+        .area-current { grid-area: current; }
+        .area-today { grid-area: today; }
+        .area-seven { grid-area: seven; }
+        .area-graph { grid-area: graph; min-height: 0; min-width: 0; }
+
+        /* パネルのスタイル */
+        .panel {
+            background-color: rgba(15, 23, 42, 0.75);
+            border-radius: 1rem;
+            border: 1px solid rgba(71, 85, 105, 0.4);
+            padding: 0.6rem;
+            display: flex;
+            flex-direction: column;
+            backdrop-filter: blur(4px);
+            overflow: hidden;
+        }
+
+        /* 設定モーダル */
+        #settings-modal {
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+
+        /* カスタムツールチップ */
+        #custom-tooltip {
+            position: fixed;
+            background: rgba(15, 23, 42, 0.95);
+            border: 1px solid rgba(71, 85, 105, 0.6);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            pointer-events: none;
+            z-index: 9999;
+            transform: translate(-50%, -100%);
+            margin-top: -10px;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="select-none text-slate-200">
+
+<div id="shift-container">
+    <div id="grid-container" class="layout-pattern-0">
+        
+        <div class="panel area-current relative flex flex-col justify-center items-center">
+            <button id="btn-settings" class="absolute top-2 right-2 text-slate-400 hover:text-white transition p-2">
+                <i data-lucide="settings" class="w-5 h-5"></i>
+            </button>
+            
+            <div class="flex flex-col items-center mb-1">
+                <div class="text-xs text-slate-500 font-medium" id="sync-time">Sync: --:--</div>
+                <div class="text-sm text-blue-400 font-bold tracking-widest uppercase mt-1" id="last-update-time">Loading...</div>
+            </div>
+            
+            <div class="flex-1 flex flex-col justify-center items-center w-full mt-2">
+                <div class="flex items-center justify-center gap-3 w-full">
+                    <div id="current-bg" class="text-7xl lg:text-8xl xl:text-9xl font-black tabular-nums tracking-tighter leading-none">---</div>
+                    <div id="trend-arrow" class="text-5xl lg:text-6xl xl:text-7xl font-black leading-none"></div>
+                </div>
+                <div id="bg-delta" class="text-xl lg:text-2xl text-slate-400 mt-2 font-medium">--</div>
+            </div>
+            
+            <div id="error-message" class="text-red-400 text-sm mt-2 hidden text-center bg-red-900/30 p-1.5 rounded w-full"></div>
+        </div>
+
+        <div class="panel area-today flex flex-col justify-between">
+            <h2 class="text-sm md:text-base font-bold text-slate-200 mb-1.5 border-b border-slate-700 pb-1 flex items-center gap-1.5">
+                <i data-lucide="calendar" class="w-4 h-4 md:w-5 md:h-5 text-blue-400"></i>本日 (0:00-)
+            </h2>
+            
+            <div class="flex-1 flex flex-col justify-between gap-1.5">
+                <!-- TIR Section -->
+                <div class="flex flex-col gap-0.5">
+                    <div class="flex justify-between text-[10px] md:text-xs font-medium text-slate-400 px-1">
+                        <span>Low</span><span>In Range</span><span>High</span>
+                    </div>
+                    <div class="flex h-2.5 md:h-3 w-full rounded-full overflow-hidden bg-slate-800 shadow-inner">
+                        <div id="td-tbr" class="bg-red-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="td-tir" class="bg-green-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="td-tar" class="bg-yellow-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-xs md:text-sm font-bold px-1">
+                        <span class="text-red-400" id="td-tbr-val">0%</span>
+                        <span class="text-green-400" id="td-tir-val">0%</span>
+                        <span class="text-yellow-400" id="td-tar-val">0%</span>
+                    </div>
+                </div>
+
+                <!-- Main Metrics Grid (Expanded) -->
+                <div class="grid grid-cols-3 gap-1 md:gap-2 bg-slate-800/60 rounded-lg p-1.5 border border-slate-700/50">
+                    <div class="flex flex-col items-center justify-center border-r border-slate-700/50 pr-1">
+                        <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none mb-1 font-semibold">Avg / CV</span>
+                        <div class="text-lg md:text-xl font-black text-slate-200 leading-none"><span id="td-mean">0</span></div>
+                        <div class="text-[10px] md:text-xs font-bold text-slate-400 mt-1">(<span id="td-cv">0</span>%)</div>
+                    </div>
+                    <div class="flex flex-col items-center justify-center border-r border-slate-700/50 px-1">
+                        <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none mb-1 font-semibold text-center">TDD</span>
+                        <div class="text-lg md:text-xl font-black text-blue-300 leading-none">
+                            <span id="td-tdd">0.0</span><span class="text-xs font-normal ml-0.5">U</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-center justify-center pl-1">
+                        <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none mb-1 font-semibold text-center">Carbs</span>
+                        <div class="text-lg md:text-xl font-black text-yellow-300 leading-none">
+                            <span id="td-carbs">0</span><span class="text-xs font-normal ml-0.5">g</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Insulin Breakdown -->
+                <div class="flex flex-col gap-1">
+                    <div class="flex h-2.5 md:h-3 w-full rounded-full overflow-hidden bg-slate-800">
+                        <div id="td-basal-bar" class="bg-slate-400 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="td-smb-bar" class="bg-purple-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="td-bolus-bar" class="bg-cyan-400 h-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-center px-1">
+                        <div class="flex flex-col items-start">
+                            <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none">Basal</span>
+                            <span class="text-sm md:text-base font-bold text-slate-300 leading-none mt-1" id="td-basal">0.0</span>
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none">SMB</span>
+                            <span class="text-sm md:text-base font-bold text-purple-400 leading-none mt-1" id="td-smb">0.0</span>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none">Bolus</span>
+                            <span class="text-sm md:text-base font-bold text-cyan-300 leading-none mt-1" id="td-bolus">0.0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel area-seven flex flex-col justify-between">
+            <h2 class="text-sm md:text-base font-bold text-slate-200 mb-1.5 border-b border-slate-700 pb-1 flex items-center gap-1.5">
+                <i data-lucide="calendar-days" class="w-4 h-4 md:w-5 md:h-5 text-purple-400"></i>過去7日間 Avg
+            </h2>
+            
+            <div class="flex-1 flex flex-col justify-between gap-1.5">
+                <!-- TIR Section -->
+                <div class="flex flex-col gap-0.5">
+                    <div class="flex justify-between text-[10px] md:text-xs font-medium text-slate-400 px-1">
+                        <span>Low</span><span>In Range</span><span>High</span>
+                    </div>
+                    <div class="flex h-2.5 md:h-3 w-full rounded-full overflow-hidden bg-slate-800 shadow-inner">
+                        <div id="7d-tbr" class="bg-red-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="7d-tir" class="bg-green-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="7d-tar" class="bg-yellow-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-xs md:text-sm font-bold px-1">
+                        <span class="text-red-400" id="7d-tbr-val">0%</span>
+                        <span class="text-green-400" id="7d-tir-val">0%</span>
+                        <span class="text-yellow-400" id="7d-tar-val">0%</span>
+                    </div>
+                </div>
+
+                <!-- Main Metrics Grid -->
+                <div class="grid grid-cols-3 gap-1 md:gap-2 bg-slate-800/60 rounded-lg p-1.5 border border-slate-700/50">
+                    <div class="flex flex-col items-center justify-center border-r border-slate-700/50 pr-1">
+                        <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none mb-1 font-semibold">Avg / CV</span>
+                        <div class="text-lg md:text-xl font-black text-slate-200 leading-none"><span id="7d-mean">0</span></div>
+                        <div class="text-[10px] md:text-xs font-bold text-slate-400 mt-1">(<span id="7d-cv">0</span>%)</div>
+                    </div>
+                    <div class="flex flex-col items-center justify-center border-r border-slate-700/50 px-1">
+                        <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none mb-1 font-semibold text-center">TDD</span>
+                        <div class="text-lg md:text-xl font-black text-blue-300 leading-none">
+                            <span id="7d-tdd">0.0</span><span class="text-xs font-normal ml-0.5">U</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-center justify-center pl-1">
+                        <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none mb-1 font-semibold text-center">Carbs</span>
+                        <div class="text-lg md:text-xl font-black text-yellow-300 leading-none">
+                            <span id="7d-carbs">0</span><span class="text-xs font-normal ml-0.5">g</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Insulin Breakdown -->
+                <div class="flex flex-col gap-1">
+                    <div class="flex h-2.5 md:h-3 w-full rounded-full overflow-hidden bg-slate-800">
+                        <div id="7d-basal-bar" class="bg-slate-400 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="7d-smb-bar" class="bg-purple-500 h-full transition-all duration-1000" style="width: 0%"></div>
+                        <div id="7d-bolus-bar" class="bg-cyan-400 h-full transition-all duration-1000" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-center px-1">
+                        <div class="flex flex-col items-start">
+                            <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none">Basal</span>
+                            <span class="text-sm md:text-base font-bold text-slate-300 leading-none mt-1" id="7d-basal">0.0</span>
+                        </div>
+                        <div class="flex flex-col items-center">
+                            <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none">SMB</span>
+                            <span class="text-sm md:text-base font-bold text-purple-400 leading-none mt-1" id="7d-smb">0.0</span>
+                        </div>
+                        <div class="flex flex-col items-end">
+                            <span class="text-[10px] md:text-xs text-slate-400 uppercase leading-none">Bolus</span>
+                            <span class="text-sm md:text-base font-bold text-cyan-300 leading-none mt-1" id="7d-bolus">0.0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel area-graph flex flex-col">
+            <!-- グラフ操作ツールバー -->
+            <div class="flex justify-between items-center mb-2 px-1">
+                <div class="flex items-center gap-1">
+                    <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+                    <span id="chart-date-label" class="font-bold text-slate-300 w-28 text-center text-sm">Today</span>
+                    <button id="btn-next" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed" disabled><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+                </div>
+                <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-sm font-medium">
+                    <button class="time-btn px-3 py-1 rounded transition" data-hours="3">3h</button>
+                    <button class="time-btn px-3 py-1 rounded transition bg-slate-600 text-white shadow" data-hours="6">6h</button>
+                    <button class="time-btn px-3 py-1 rounded transition" data-hours="12">12h</button>
+                    <button class="time-btn px-3 py-1 rounded transition" data-hours="24">24h</button>
+                </div>
+            </div>
+            <!-- チャートキャンバス -->
+            <div class="flex-1 relative w-full h-full min-h-0">
+                <canvas id="bgChart"></canvas>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-700">
+        <h2 class="text-xl font-bold mb-4 text-white flex items-center gap-2">
+            <i data-lucide="settings" class="w-5 h-5"></i>設定
+        </h2>
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-400 mb-1">Nightscout URL</label>
+                <input type="text" id="ns-url" placeholder="https://your-site.herokuapp.com" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-slate-400 mb-1">API Secret / Token (任意)</label>
+                <input type="password" id="ns-secret" placeholder="API Secret or Subject Token" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+            </div>
+        </div>
+        <div class="mt-6 flex justify-end gap-3">
+            <button id="btn-cancel-settings" class="px-4 py-2 rounded text-sm text-slate-300 hover:bg-slate-700 transition">キャンセル</button>
+            <button id="btn-save-settings" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition font-bold">保存 & 接続</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    lucide.createIcons();
+
+    const state = {
+        url: localStorage.getItem('ns-url') || '',
+        secret: localStorage.getItem('ns-secret') || '',
+        data: { entries: [], treatments: [], profile: null },
+        timeRangeHours: 6,
+        offsetDays: 0,
+        lastFetchAt: null,
+    };
+
+    // 常時表示向け設定
+    // 初回は過去8日分を取得し，以後は直近90分だけを3分ごとに追加取得する。
+    const FULL_LOOKBACK_DAYS = 8;
+    const DELTA_LOOKBACK_MINUTES = 90;
+    const REFRESH_INTERVAL_MS = 3 * 60 * 1000;
+    const DATA_RETENTION_DAYS = 8;
+
+    let chartInstance = null;
+    let fetchInterval = null;
+    let tooltipEl = null;
+
+    // カスタムツールチップの初期化
+    function initTooltip() {
+        if (!document.getElementById('custom-tooltip')) {
+            tooltipEl = document.createElement('div');
+            tooltipEl.id = 'custom-tooltip';
+            tooltipEl.className = 'hidden';
+            document.body.appendChild(tooltipEl);
+        } else {
+            tooltipEl = document.getElementById('custom-tooltip');
+        }
+    }
+    initTooltip();
+
+    // 1. レイアウトシャッフル (10分毎)
+    let currentLayoutPattern = 0;
+    setInterval(() => {
+        const container = document.getElementById('grid-container');
+        container.classList.remove(`layout-pattern-${currentLayoutPattern}`);
+        currentLayoutPattern = (currentLayoutPattern + 1) % 4;
+        container.classList.add(`layout-pattern-${currentLayoutPattern}`);
+        if(chartInstance) chartInstance.resize();
+    }, 10 * 60 * 1000);
+
+    // 2. マイクロピクセルシフト (1分毎)
+    setInterval(() => {
+        const shiftX = Math.floor(Math.random() * 7) - 3; // -3 to +3 px
+        const shiftY = Math.floor(Math.random() * 7) - 3;
+        document.getElementById('shift-container').style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+    }, 60 * 1000);
+
+    // 3. アイドル調光 (3分で75%)
+    let idleTimer = 0;
+    const resetIdle = () => {
+        idleTimer = 0;
+        document.body.style.filter = 'brightness(100%)';
+    };
+    ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle));
+    
+    setInterval(() => {
+        idleTimer++;
+        if (idleTimer >= 3) document.body.style.filter = 'brightness(75%)';
+    }, 60 * 1000);
+
+    document.getElementById('btn-settings').addEventListener('click', () => {
+        document.getElementById('ns-url').value = state.url;
+        document.getElementById('ns-secret').value = state.secret;
+        document.getElementById('settings-modal').classList.remove('hidden');
+    });
+
+    document.getElementById('btn-cancel-settings').addEventListener('click', () => {
+        document.getElementById('settings-modal').classList.add('hidden');
+    });
+
+    document.getElementById('btn-save-settings').addEventListener('click', () => {
+        state.url = document.getElementById('ns-url').value.trim().replace(/\/$/, '');
+        state.secret = document.getElementById('ns-secret').value.trim();
+        localStorage.setItem('ns-url', state.url);
+        localStorage.setItem('ns-secret', state.secret);
+        document.getElementById('settings-modal').classList.add('hidden');
+        initApp();
+    });
+
+    document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            document.querySelectorAll('.time-btn').forEach(b => {
+                b.classList.remove('bg-slate-600', 'text-white', 'shadow');
+                b.classList.add('text-slate-400');
+            });
+            e.target.classList.add('bg-slate-600', 'text-white', 'shadow');
+            e.target.classList.remove('text-slate-400');
+            state.timeRangeHours = parseInt(e.target.dataset.hours);
+            updateChart();
+        });
+    });
+
+    document.getElementById('btn-prev').addEventListener('click', () => {
+        if(state.offsetDays < 7) {
+            state.offsetDays++;
+            updateChart();
+            updateDateControls();
+        }
+    });
+
+    document.getElementById('btn-next').addEventListener('click', () => {
+        if(state.offsetDays > 0) {
+            state.offsetDays--;
+            updateChart();
+            updateDateControls();
+        }
+    });
+
+    function updateDateControls() {
+        const btnNext = document.getElementById('btn-next');
+        const btnPrev = document.getElementById('btn-prev');
+        const label = document.getElementById('chart-date-label');
+
+        btnNext.disabled = state.offsetDays === 0;
+        btnNext.classList.toggle('opacity-50', btnNext.disabled);
+        btnNext.classList.toggle('cursor-not-allowed', btnNext.disabled);
+
+        btnPrev.disabled = state.offsetDays === 7;
+        btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
+        btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
+
+        if(state.offsetDays === 0) label.textContent = "Today";
+        else if (state.offsetDays === 1) label.textContent = "Yesterday";
+        else label.textContent = `${state.offsetDays} days ago`;
+    }
+
+    async function fetchAPI(endpoint) {
+        if(!state.url) return null;
+        let fetchUrl = `${state.url}${endpoint}`;
+        const headers = { 'Accept': 'application/json' };
+        if(state.secret) headers['API-SECRET'] = state.secret;
+        
+        try {
+            const response = await fetch(fetchUrl, { headers });
+            if(!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            console.error("API Fetch Error:", error);
+            showError("接続に失敗しました。URLを確認してください。");
+            return null;
+        }
+    }
+
+    function showError(msg) {
+        const errDiv = document.getElementById('error-message');
+        errDiv.textContent = msg;
+        errDiv.classList.remove('hidden');
+    }
+
+    function hideError() {
+        document.getElementById('error-message').classList.add('hidden');
+    }
+
+    function mergeByKey(existing, incoming, keyFn) {
+        const map = new Map();
+        existing.forEach(item => map.set(keyFn(item), item));
+        incoming.forEach(item => map.set(keyFn(item), item));
+        return Array.from(map.values());
+    }
+
+    function pruneOldData() {
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - DATA_RETENTION_DAYS);
+
+        state.data.entries = state.data.entries.filter(e => {
+            const d = new Date(e.dateString || e.date || 0);
+            return d >= cutoff;
+        });
+
+        state.data.treatments = state.data.treatments.filter(t => {
+            const d = new Date(t.created_at || 0);
+            return d >= cutoff;
+        });
+    }
+
+    async function fetchAllData(forceFull = false) {
+        if(!state.url) return;
+        if(document.hidden) return;
+
+        const fromDate = new Date();
+        const shouldFullFetch = forceFull || state.data.entries.length === 0 || state.data.treatments.length === 0;
+
+        if(shouldFullFetch) {
+            fromDate.setDate(fromDate.getDate() - FULL_LOOKBACK_DAYS);
+        } else {
+            fromDate.setMinutes(fromDate.getMinutes() - DELTA_LOOKBACK_MINUTES);
+        }
+
+        const fromStr = fromDate.toISOString();
+        document.getElementById('last-update-time').textContent = 'Updating...';
+
+        try {
+            if(!state.data.profile || shouldFullFetch) {
+                const profiles = await fetchAPI('/api/v1/profile.json');
+                if(profiles && profiles.length > 0) {
+                    const defaultName = profiles[0].defaultProfile;
+                    state.data.profile = profiles[0].store[defaultName];
+                }
+            }
+
+            const entriesUrl = `/api/v1/entries.json?find[dateString][$gte]=${encodeURIComponent(fromStr)}&count=10000`;
+            const treatsUrl = `/api/v1/treatments.json?find[created_at][$gte]=${encodeURIComponent(fromStr)}&count=10000`;
+
+            const [entriesData, treatsData] = await Promise.all([
+                fetchAPI(entriesUrl),
+                fetchAPI(treatsUrl)
+            ]);
+
+            if(entriesData && treatsData) {
+                state.data.entries = mergeByKey(
+                    state.data.entries,
+                    entriesData,
+                    e => e._id || e.date || e.dateString
+                ).sort((a,b) => (a.date || new Date(a.dateString).getTime()) - (b.date || new Date(b.dateString).getTime()));
+
+                state.data.treatments = mergeByKey(
+                    state.data.treatments,
+                    treatsData,
+                    t => t._id || `${t.created_at}-${t.eventType || ''}-${t.insulin || ''}-${t.carbs || ''}`
+                ).sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
+
+                pruneOldData();
+                state.lastFetchAt = new Date();
+
+                hideError();
+                updateUI();
+
+                const now = new Date();
+                const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+                document.getElementById('sync-time').textContent = `Sync: ${timeStr}`;
+            }
+        } catch(e) {
+            console.error("Fetch process failed", e);
+            showError("データ更新に失敗しました。通信状態とNightscout設定を確認してください。");
+        }
+    }
+
+    const getDirectionArrow = (dir) => {
+        const arrows = { 'NONE': '⇼', 'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊', 'Not Computable': '-', 'Rate Out Of Range': '⇕' };
+        return arrows[dir] || '';
+    };
+
+    const getBgColorClass = (sgv) => {
+        if (sgv < 55) return 'text-red-600';
+        if (sgv < 70) return 'text-red-400';
+        if (sgv > 250) return 'text-yellow-600';
+        if (sgv > 180) return 'text-yellow-400';
+        return 'text-green-400';
+    };
+
+    function updateUI() {
+        const entries = state.data.entries;
+        if(entries.length === 0) return;
+
+        const latest = entries[entries.length - 1];
+        const currentBgEl = document.getElementById('current-bg');
+        currentBgEl.textContent = latest.sgv;
+        
+        currentBgEl.className = currentBgEl.className.replace(/text-(red|yellow|green)-\d+/, '');
+        currentBgEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
+        
+        const arrowEl = document.getElementById('trend-arrow');
+        arrowEl.textContent = getDirectionArrow(latest.direction);
+        arrowEl.className = arrowEl.className.replace(/text-(red|yellow|green)-\d+/, '');
+        arrowEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
+        
+        if(entries.length > 1) {
+            const prev = entries[entries.length - 2];
+            const delta = latest.sgv - prev.sgv;
+            document.getElementById('bg-delta').textContent = `${delta >= 0 ? '+' : ''}${delta} mg/dL`;
+        }
+
+        const timeDiff = Math.floor((new Date() - new Date(latest.dateString)) / 60000);
+        document.getElementById('last-update-time').textContent = `${timeDiff} min ago`;
+
+        calculateSummaries();
+        updateChart();
+    }
+
+    function calculateSummaries() {
+        const now = new Date();
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const todayEnd = new Date(todayStart);
+        todayEnd.setDate(todayEnd.getDate() + 1);
+        const todayStats = calcStatsForPeriod(todayStart, todayEnd);
+        renderStats('td', todayStats, 1);
+
+        const sevenDaysAgo = new Date(todayStart);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const sevenDaysStats = calcStatsForPeriod(sevenDaysAgo, todayEnd);
+        renderStats('7d', sevenDaysStats, 7);
+    }
+
+    function calcStatsForPeriod(startDate, endDate) {
+        const periodEntries = state.data.entries.filter(e => {
+            const d = new Date(e.dateString);
+            return d >= startDate && d < endDate;
+        });
+
+        const periodTreats = state.data.treatments.filter(t => {
+            const d = new Date(t.created_at);
+            return d >= startDate && d < endDate;
+        });
+
+        let tbr = 0, tir = 0, tar = 0;
+        let sum = 0, mean = 0, sd = 0, cv = 0;
+        const total = periodEntries.length;
+        
+        if(total > 0) {
+            // TIR Calculation
+            tbr = periodEntries.filter(e => e.sgv < 70).length / total * 100;
+            tir = periodEntries.filter(e => e.sgv >= 70 && e.sgv <= 180).length / total * 100;
+            tar = periodEntries.filter(e => e.sgv > 180).length / total * 100;
+            
+            // Mean and CV Calculation
+            periodEntries.forEach(e => sum += e.sgv);
+            mean = sum / total;
+            
+            let sumSqDiff = 0;
+            periodEntries.forEach(e => sumSqDiff += Math.pow(e.sgv - mean, 2));
+            sd = Math.sqrt(sumSqDiff / total);
+            cv = (sd / mean) * 100;
+        }
+
+        let totalCarbs = 0, bolus = 0, smb = 0;
+        periodTreats.forEach(t => {
+            if(t.carbs) totalCarbs += t.carbs;
+            if(t.insulin) {
+                if(t.insulin <= 0.4 || t.eventType === 'SMB' || t.isSMB) smb += t.insulin;
+                else if (!t.eventType || t.eventType === 'Correction Bolus' || t.eventType === 'Meal Bolus') bolus += t.insulin;
+            }
+        });
+
+        const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
+        const tdd = basal + bolus + smb;
+
+        return { tbr, tir, tar, carbs: totalCarbs, bolus, smb, basal, tdd, mean, cv };
+    }
+
+    function calculateIntegralBasal(startDate, endDate, periodTreats) {
+        if(!state.data.profile || !state.data.profile.basal) return 0;
+        
+        let totalBasalUnits = 0;
+        const profileBasals = state.data.profile.basal;
+        const tempBasals = periodTreats.filter(t => t.eventType === 'Temp Basal' && t.duration > 0 && t.absolute !== undefined);
+
+        let currentIter = new Date(startDate);
+        const endIter = new Date(endDate);
+        if(endIter > new Date()) endIter.setTime(new Date().getTime());
+
+        while(currentIter < endIter) {
+            const iterTimeMs = currentIter.getTime();
+            const h = currentIter.getHours();
+            const m = currentIter.getMinutes();
+            const secondsSinceMidnight = (h * 3600) + (m * 60);
+            
+            let currentRate = profileBasals[0].value;
+            for(let i = profileBasals.length - 1; i >= 0; i--) {
+                if(secondsSinceMidnight >= profileBasals[i].timeAsSeconds) {
+                    currentRate = profileBasals[i].value;
+                    break;
+                }
+            }
+
+            for(const tb of tempBasals) {
+                const tbStart = new Date(tb.created_at).getTime();
+                const tbEnd = tbStart + (tb.duration * 60 * 1000);
+                if(iterTimeMs >= tbStart && iterTimeMs < tbEnd) {
+                    currentRate = tb.absolute;
+                    break;
+                }
+            }
+            totalBasalUnits += (currentRate / 60);
+            currentIter.setMinutes(currentIter.getMinutes() + 1);
+        }
+        return totalBasalUnits;
+    }
+
+    function renderStats(prefix, stats, daysDivider) {
+        document.getElementById(`${prefix}-tbr`).style.width = `${stats.tbr}%`;
+        document.getElementById(`${prefix}-tir`).style.width = `${stats.tir}%`;
+        document.getElementById(`${prefix}-tar`).style.width = `${stats.tar}%`;
+        
+        document.getElementById(`${prefix}-tbr-val`).textContent = `${Math.round(stats.tbr)}%`;
+        document.getElementById(`${prefix}-tir-val`).textContent = `${Math.round(stats.tir)}%`;
+        document.getElementById(`${prefix}-tar-val`).textContent = `${Math.round(stats.tar)}%`;
+
+        const tdd = stats.tdd / daysDivider;
+        const basal = stats.basal / daysDivider;
+        const bolus = stats.bolus / daysDivider;
+        const smb = stats.smb / daysDivider;
+
+        document.getElementById(`${prefix}-tdd`).textContent = tdd.toFixed(1);
+        document.getElementById(`${prefix}-basal`).textContent = basal.toFixed(1);
+        document.getElementById(`${prefix}-bolus`).textContent = bolus.toFixed(1);
+        document.getElementById(`${prefix}-smb`).textContent = smb.toFixed(1);
+        document.getElementById(`${prefix}-carbs`).textContent = Math.round(stats.carbs / daysDivider);
+        
+        document.getElementById(`${prefix}-mean`).textContent = Math.round(stats.mean);
+        document.getElementById(`${prefix}-cv`).textContent = stats.cv.toFixed(1);
+
+        if(tdd > 0) {
+            document.getElementById(`${prefix}-basal-bar`).style.width = `${(basal/tdd)*100}%`;
+            document.getElementById(`${prefix}-bolus-bar`).style.width = `${(bolus/tdd)*100}%`;
+            document.getElementById(`${prefix}-smb-bar`).style.width = `${(smb/tdd)*100}%`;
+        } else {
+            document.getElementById(`${prefix}-basal-bar`).style.width = '0%';
+            document.getElementById(`${prefix}-bolus-bar`).style.width = '0%';
+            document.getElementById(`${prefix}-smb-bar`).style.width = '0%';
+        }
+    }
+
+    function updateChart() {
+        if(!state.data.entries.length) return;
+        const ctx = document.getElementById('bgChart').getContext('2d');
+        
+        const targetEnd = new Date();
+        targetEnd.setDate(targetEnd.getDate() - state.offsetDays);
+        const targetStart = new Date(targetEnd);
+        targetStart.setHours(targetStart.getHours() - state.timeRangeHours);
+
+        const plotEntries = state.data.entries.filter(e => {
+            const d = new Date(e.dateString);
+            return d >= targetStart && d <= targetEnd;
+        });
+        const plotTreats = state.data.treatments.filter(t => {
+            const d = new Date(t.created_at);
+            return d >= targetStart && d <= targetEnd;
+        });
+
+        const scatterData = plotEntries.map(e => ({ x: new Date(e.dateString).getTime(), y: e.sgv }));
+
+        const maxSgv = Math.max(250, ...scatterData.map(d => d.y));
+        const yAxisMax = maxSgv + 30; 
+        const yAxisMin = 40;
+
+        const annotations = {
+            targetRange: {
+                type: 'box', yMin: 70, yMax: 180,
+                backgroundColor: 'rgba(74, 222, 128, 0.1)', borderWidth: 0, drawTime: 'beforeDatasetsDraw'
+            }
+        };
+
+        plotTreats.forEach((t, i) => {
+            const time = new Date(t.created_at).getTime();
+            if(t.carbs) {
+                const p = Math.max(3, Math.sqrt(t.carbs) * 1.5);
+                annotations[`carb_${i}`] = {
+                    type: 'label', xValue: time, yValue: yAxisMax - 25,
+                    backgroundColor: 'rgba(234, 179, 8, 0.7)', color: '#fff',
+                    content: `${t.carbs}`, font: { size: 10, weight: 'bold' },
+                    borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 },
+                    callout: { display: false },
+                    enter(ctx, event) {
+                        const d = new Date(time);
+                        tooltipEl.innerHTML = `<div class="font-bold text-yellow-400 mb-1">Carbs: ${t.carbs}g</div><div class="text-slate-300 text-xs">${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}</div>`;
+                        tooltipEl.style.left = event.x + 'px';
+                        tooltipEl.style.top = event.y + 'px';
+                        tooltipEl.classList.remove('hidden');
+                    },
+                    leave() { tooltipEl.classList.add('hidden'); }
+                };
+            }
+            if(t.insulin) {
+                const isSMB = (t.insulin <= 0.4 || t.eventType === 'SMB' || t.isSMB);
+                const color = isSMB ? 'rgba(168, 85, 247, 0.7)' : 'rgba(6, 182, 212, 0.7)';
+                const label = `${t.insulin}`;
+                const p = Math.max(3, Math.sqrt(t.insulin) * 3);
+                annotations[`ins_${i}`] = {
+                    type: 'label', xValue: time, yValue: yAxisMin + 15,
+                    backgroundColor: color, color: '#fff',
+                    content: label, font: { size: 10, weight: 'bold' },
+                    borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 },
+                    callout: { display: false },
+                    enter(ctx, event) {
+                        const d = new Date(time);
+                        const typeStr = isSMB ? 'SMB' : 'Bolus';
+                        const colorClass = isSMB ? 'text-purple-400' : 'text-cyan-400';
+                        tooltipEl.innerHTML = `<div class="font-bold ${colorClass} mb-1">${typeStr}: ${t.insulin}U</div><div class="text-slate-300 text-xs">${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}</div>`;
+                        tooltipEl.style.left = event.x + 'px';
+                        tooltipEl.style.top = event.y + 'px';
+                        tooltipEl.classList.remove('hidden');
+                    },
+                    leave() { tooltipEl.classList.add('hidden'); }
+                };
+            }
+        });
+
+        const basalData = [];
+        if(state.data.profile && state.data.profile.basal) {
+            const profileBasals = state.data.profile.basal;
+            let iter = new Date(targetStart);
+            iter.setMinutes(0,0,0);
+            while(iter <= targetEnd) {
+                const iterTime = iter.getTime();
+                const h = iter.getHours(), m = iter.getMinutes();
+                const secondsSinceMidnight = (h * 3600) + (m * 60);
+                let rate = profileBasals[0].value;
+                for(let i = profileBasals.length - 1; i >= 0; i--) {
+                    if(secondsSinceMidnight >= profileBasals[i].timeAsSeconds) { rate = profileBasals[i].value; break; }
+                }
+                const tempBasal = plotTreats.find(t => {
+                    if(t.eventType !== 'Temp Basal' || t.duration <= 0 || t.absolute === undefined) return false;
+                    const ts = new Date(t.created_at).getTime(), te = ts + (t.duration * 60000);
+                    return iterTime >= ts && iterTime < te;
+                });
+                if(tempBasal) rate = tempBasal.absolute;
+                basalData.push({ x: iterTime, y: rate * 30 }); 
+                iter.setMinutes(iter.getMinutes() + 5);
+            }
+        }
+
+        if(chartInstance) chartInstance.destroy();
+        Chart.defaults.color = '#64748b';
+        Chart.defaults.font.family = 'Inter, ui-sans-serif, system-ui, sans-serif';
+
+        chartInstance = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    {
+                        label: 'BG', data: scatterData,
+                        backgroundColor: (context) => {
+                            const val = context.raw?.y;
+                            if(val < 70) return '#f87171'; if(val > 180) return '#facc15'; return '#4ade80';
+                        },
+                        pointRadius: 2.5, order: 1
+                    },
+                    {
+                        type: 'line', label: 'Basal', data: basalData,
+                        borderColor: 'rgba(59, 130, 246, 0.4)', backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 1, fill: true, stepped: true, pointRadius: 0, order: 2, yAxisID: 'y'
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                interaction: { mode: 'nearest', intersect: false },
+                plugins: { 
+                    legend: { display: false }, 
+                    tooltip: { 
+                        enabled: true,
+                        backgroundColor: 'rgba(15, 23, 42, 0.9)',
+                        titleFont: { size: 13 },
+                        bodyFont: { size: 14, weight: 'bold' },
+                        padding: 10,
+                        callbacks: {
+                            label: function(context) {
+                                if(context.dataset.label === 'BG') return `BG: ${context.raw.y} mg/dL`;
+                                if(context.dataset.label === 'Basal') return `Basal: ${(context.raw.y / 30).toFixed(2)} U/h`;
+                            }
+                        }
+                    }, 
+                    annotation: { annotations } 
+                },
+                layout: { padding: { left: 0, right: 10, top: 20, bottom: 0 } },
+                scales: {
+                    x: {
+                        type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
+                        min: targetStart.getTime(), max: targetEnd.getTime(),
+                        grid: { color: 'rgba(51, 65, 85, 0.4)' }, ticks: { font: { size: 12 } }
+                    },
+                    y: {
+                        min: yAxisMin, max: yAxisMax,
+                        grid: { color: 'rgba(51, 65, 85, 0.4)' }, ticks: { font: { size: 12 } }
+                    }
+                }
+            }
+        });
+    }
+
+    function initApp() {
+        if(!state.url) { document.getElementById('settings-modal').classList.remove('hidden'); return; }
+        fetchAllData(true);
+        if(fetchInterval) clearInterval(fetchInterval);
+        fetchInterval = setInterval(() => {
+            if(state.offsetDays === 0) fetchAllData(false);
+        }, REFRESH_INTERVAL_MS);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if(!document.hidden && state.url && state.offsetDays === 0) {
+            fetchAllData(false);
+        }
+    });
+
+    initApp();
+</script>
+</body>
+</html>
