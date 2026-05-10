@@ -220,24 +220,7 @@
             </div>
           </div>
         </div>
-
-        <div id="current-advice-view" class="hidden flex-1 w-full h-full mt-8 px-2 overflow-y-auto">
-          <div class="w-full bg-amber-900/20 border border-amber-700/40 rounded-xl p-3">
-            <div class="flex items-center justify-between mb-2">
-              <div class="text-[13px] font-black text-amber-300 tracking-wider">
-                ADJ &lt;6.0% Advice
-              </div>
-              <div class="text-[10px] text-slate-400 font-bold">
-                tap to close
-              </div>
-            </div>
-
-            <div id="current-advice-content" class="space-y-2">
-              <div class="text-xs text-slate-400 font-bold">Loading...</div>
-            </div>
-          </div>
-        </div>
-
+        
         <div id="error-message"
           class="absolute bottom-2 text-red-400 text-xs hidden text-center bg-red-900/80 px-3 py-1 rounded-full w-3/4 max-w-xs border border-red-500">
         </div>
@@ -991,92 +974,6 @@
       };
     }
 
-    function generateAdj6Advice(stats) {
-      const targetAdj = 6.0;
-      const currentAdj = Number(stats.adjustedGmi || 0);
-      const deltaAdj = currentAdj - targetAdj;
-
-      const tir = Number(stats.tir || 0);
-      const tbr = Number(stats.tbr || 0);
-      const tbr54 = Number(stats.tbr54 || 0);
-      const tar = Number(stats.tar || 0);
-      const tar250 = Number(stats.tar250 || 0);
-      const cv = Number(stats.cv || 0);
-      const mean = Number(stats.mean || 0);
-
-      const tar180Minutes = Math.round(tar * 14.4);
-      const tar250Minutes = Math.round(tar250 * 14.4);
-
-      if (!currentAdj || !mean) {
-        return {
-          title: 'データ不足',
-          main: '7日分のCGMデータが不足しています。',
-          actions: [
-            'Nightscoutのデータ取得を確認する',
-            '少なくとも24時間以上，できれば7日分で評価する'
-          ],
-          level: 'neutral'
-        };
-      }
-
-      if (tbr54 >= 1 || tbr >= 4) {
-        return {
-          title: 'まず低血糖対策',
-          main: `現在ADJ ${currentAdj.toFixed(1)}%。低血糖時間が多いため，6.0%未満を狙う前に安全性を優先してください。`,
-          actions: [
-            `TBR 70未満：${tbr.toFixed(1)}%，TBR 54未満：${tbr54.toFixed(1)}%`,
-            '夜間・運動後・食前低血糖を確認する',
-            '低血糖が出る時間帯の基礎・補正設定を見直す',
-            'TBR 70未満を4%未満，TBR 54未満を1%未満に戻す'
-          ],
-          level: 'danger'
-        };
-      }
-
-      if (deltaAdj <= 0) {
-        return {
-          title: 'ADJ 6.0%未満 達成中',
-          main: `現在ADJ ${currentAdj.toFixed(1)}%。低血糖を増やさず維持する段階です。`,
-          actions: [
-            `TIR ${Math.round(tir)}%を維持する`,
-            `CV ${cv.toFixed(1)}%を36%以下に維持する`,
-            `現在の180超：${tar180Minutes}分/日，250超：${tar250Minutes}分/日`,
-            '食後ピークと夜間低血糖を監視する'
-          ],
-          level: 'good'
-        };
-      }
-
-      // 安全な簡易推定。巨大な値が出ないように，現在の高血糖時間を上限にする。
-      let reduce250 = 0;
-      if (tar250Minutes > 0) {
-        reduce250 = Math.min(tar250Minutes, Math.ceil(deltaAdj * 60));
-      }
-
-      const reduce180 = Math.min(
-        Math.max(0, tar180Minutes - reduce250),
-        Math.ceil(deltaAdj * 120)
-      );
-
-      let priority = '食後ピーク';
-      if (tar250Minutes >= 15) priority = '250 mg/dL超の著明高血糖';
-      else if (tar180Minutes >= 180) priority = '180 mg/dL超の高血糖時間';
-      else if (cv > 36) priority = '血糖変動';
-
-      return {
-        title: 'ADJ 6.0%未満まで',
-        main: `現在ADJ ${currentAdj.toFixed(1)}%。6.0%未満には，ADJをあと約 ${deltaAdj.toFixed(1)}% 下げる必要があります。`,
-        actions: [
-          `現在の180超：${tar180Minutes}分/日，250超：${tar250Minutes}分/日`,
-          `まず250超を約${reduce250}分/日減らす`,
-          `次に180超を約${reduce180}分/日減らす`,
-          `${priority}を優先する`,
-          '安全条件：TBR 70未満は4%未満，TBR 54未満は1%未満，CVは36%以下'
-        ],
-        level: 'warning'
-      };
-    }
-
     function getProfileBasalRate(date) {
       const basal = state.data.profile?.basal;
       if (!Array.isArray(basal) || !basal.length) return 0;
@@ -1553,64 +1450,6 @@
       btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
       btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
       label.textContent = state.offsetDays === 0 ? 'Today' : state.offsetDays === 1 ? 'Yesterday' : `${state.offsetDays} days ago`;
-    }
-
-    let currentAdviceMode = false;
-
-    function renderCurrentAdvice() {
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      const sevenDaysAgo = new Date(todayStart);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-      const stats7d = calcStatsForPeriod(sevenDaysAgo, now);
-      const advice = generateAdj6Advice(stats7d);
-
-      const color =
-        advice.level === 'good' ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-300' :
-          advice.level === 'danger' ? 'border-red-700/50 bg-red-900/20 text-red-300' :
-            advice.level === 'warning' ? 'border-amber-700/50 bg-amber-900/20 text-amber-300' :
-              'border-slate-700/50 bg-slate-900/20 text-slate-300';
-
-      safeSetText('current-advice-content', '');
-
-      document.getElementById('current-advice-content').innerHTML = `
-    <div class="rounded-lg border ${color} p-2">
-      <div class="text-[14px] font-black mb-1">${advice.title}</div>
-      <div class="text-[11px] text-slate-200 font-semibold leading-snug">${advice.main}</div>
-    </div>
-
-    <div class="space-y-1.5">
-      ${advice.actions.map((a, i) => `
-        <div class="bg-black/25 rounded-lg px-2 py-1.5 border border-slate-700/40">
-          <div class="text-[8px] text-slate-500 font-black tracking-widest">ACTION ${i + 1}</div>
-          <div class="text-[11px] text-slate-200 font-bold leading-snug">${a}</div>
-        </div>
-      `).join('')}
-    </div>
-
-    <div class="text-[9px] text-slate-500 leading-snug pt-1">
-      ADJは独自補正式です。低血糖が多い場合は6.0%未満より安全性を優先します。
-    </div>
-  `;
-    }
-
-    function toggleCurrentAdvice() {
-      currentAdviceMode = !currentAdviceMode;
-
-      const normalEl = document.getElementById('current-normal-view');
-      const adviceEl = document.getElementById('current-advice-view');
-
-      if (currentAdviceMode) {
-        renderCurrentAdvice();
-        normalEl.classList.add('hidden');
-        adviceEl.classList.remove('hidden');
-        adviceEl.classList.add('flex');
-      } else {
-        adviceEl.classList.add('hidden');
-        adviceEl.classList.remove('flex');
-        normalEl.classList.remove('hidden');
-      }
     }
 
     function returnToToday() {
