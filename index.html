@@ -900,10 +900,16 @@
         const type = (t.eventType || '').toLowerCase();
         if (type.includes('temp basal') || type.includes('profile')) return;
 
+        const enteredBy = (t.enteredBy || '').toLowerCase();
+
         const isSMB =
           type.includes('smb') ||
           t.isSMB === true ||
-          t.enteredBy?.toLowerCase?.().includes('smb');
+          enteredBy.includes('smb') ||
+          (
+            insulin <= 0.4 &&
+            !type.includes('meal')
+          );
 
         if (isSMB) smb += insulin;
         else bolus += insulin;
