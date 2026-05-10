@@ -167,7 +167,7 @@
   <div id="shift-container">
     <div id="grid-container" class="layout-pattern-0">
 
-      <div class="panel area-current relative flex flex-col justify-center items-center px-2">
+      <div id="current-panel" class="panel area-current relative flex flex-col justify-center items-center px-2">
         <div class="absolute top-2 right-2 flex gap-1 z-10">
           <button id="btn-fullscreen"
             class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50" aria-label="fullscreen">
@@ -185,38 +185,59 @@
           <div class="text-[10px] text-slate-400 font-medium" id="sync-time">Sync: --:--</div>
         </div>
 
-        <div class="flex-1 flex w-full h-full items-center justify-center mt-3 gap-2 sm:gap-6 relative">
-          <div class="flex flex-col items-center justify-center flex-shrink-0">
-            <div class="flex items-center gap-2 sm:gap-4">
-              <div id="current-bg"
-                class="text-[5.5rem] sm:text-[7rem] md:text-[8rem] lg:text-[9rem] font-black tabular-nums tracking-tighter leading-none"
-                style="text-shadow:0 0 20px rgba(0,0,0,0.5);">---</div>
-              <div id="trend-arrow"
-                class="text-[4rem] sm:text-[5rem] md:text-[6rem] lg:text-[7rem] font-black leading-none"
-                style="text-shadow:0 0 10px rgba(0,0,0,0.5);"></div>
+        <div id="current-normal-view" class="flex-1 flex w-full h-full">
+          <div class="flex-1 flex w-full h-full items-center justify-center mt-3 gap-2 sm:gap-6 relative">
+            <div class="flex flex-col items-center justify-center flex-shrink-0">
+              <div class="flex items-center gap-2 sm:gap-4">
+                <div id="current-bg"
+                  class="text-[5.5rem] sm:text-[7rem] md:text-[8rem] lg:text-[9rem] font-black tabular-nums tracking-tighter leading-none"
+                  style="text-shadow:0 0 20px rgba(0,0,0,0.5);">---</div>
+                <div id="trend-arrow"
+                  class="text-[4rem] sm:text-[5rem] md:text-[6rem] lg:text-[7rem] font-black leading-none"
+                  style="text-shadow:0 0 10px rgba(0,0,0,0.5);"></div>
+              </div>
+              <div id="bg-delta" class="text-xl lg:text-3xl text-slate-300 mt-1 font-bold">--</div>
             </div>
-            <div id="bg-delta" class="text-xl lg:text-3xl text-slate-300 mt-1 font-bold">--</div>
-          </div>
 
-          <div class="flex flex-col gap-2 flex-shrink-0">
-            <div
-              class="bg-blue-900/40 border border-blue-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
-              <span class="text-[11px] font-bold text-blue-300 uppercase tracking-wider mb-0.5">IOB</span>
-              <div class="text-xl sm:text-2xl font-black text-white leading-none"><span id="current-iob">--</span><span
-                  class="text-[12px] font-normal ml-0.5 text-blue-200">U</span></div>
-            </div>
-            <div
-              class="bg-yellow-900/40 border border-yellow-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
-              <span class="text-[11px] font-bold text-yellow-400 uppercase tracking-wider mb-0.5">COB</span>
-              <div class="text-xl sm:text-2xl font-black text-white leading-none"><span id="current-cob">--</span><span
-                  class="text-[12px] font-normal ml-0.5 text-yellow-200">g</span></div>
-            </div>
-            <div class="flex flex-col text-[11px] text-slate-400 font-bold mt-1 items-end pr-1 gap-0.5">
-              <span>Res: <span id="current-res" class="text-slate-200">--</span></span>
-              <span>CAGE: <span id="current-cage" class="text-slate-200">--</span></span>
+            <div class="flex flex-col gap-2 flex-shrink-0">
+              <div
+                class="bg-blue-900/40 border border-blue-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
+                <span class="text-[11px] font-bold text-blue-300 uppercase tracking-wider mb-0.5">IOB</span>
+                <div class="text-xl sm:text-2xl font-black text-white leading-none"><span
+                    id="current-iob">--</span><span class="text-[12px] font-normal ml-0.5 text-blue-200">U</span></div>
+              </div>
+              <div
+                class="bg-yellow-900/40 border border-yellow-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
+                <span class="text-[11px] font-bold text-yellow-400 uppercase tracking-wider mb-0.5">COB</span>
+                <div class="text-xl sm:text-2xl font-black text-white leading-none"><span
+                    id="current-cob">--</span><span class="text-[12px] font-normal ml-0.5 text-yellow-200">g</span>
+                </div>
+              </div>
+              <div class="flex flex-col text-[11px] text-slate-400 font-bold mt-1 items-end pr-1 gap-0.5">
+                <span>Res: <span id="current-res" class="text-slate-200">--</span></span>
+                <span>CAGE: <span id="current-cage" class="text-slate-200">--</span></span>
+              </div>
             </div>
           </div>
         </div>
+
+        <div id="current-advice-view" class="hidden flex-1 w-full h-full mt-8 px-2 overflow-y-auto">
+          <div class="w-full bg-amber-900/20 border border-amber-700/40 rounded-xl p-3">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-[13px] font-black text-amber-300 tracking-wider">
+                ADJ &lt;6.0% Advice
+              </div>
+              <div class="text-[10px] text-slate-400 font-bold">
+                tap to close
+              </div>
+            </div>
+
+            <div id="current-advice-content" class="space-y-2">
+              <div class="text-xs text-slate-400 font-bold">Loading...</div>
+            </div>
+          </div>
+        </div>
+
         <div id="error-message"
           class="absolute bottom-2 text-red-400 text-xs hidden text-center bg-red-900/80 px-3 py-1 rounded-full w-3/4 max-w-xs border border-red-500">
         </div>
@@ -478,10 +499,10 @@
             class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
         </div>
         <div>
-          <label class="block text-sm font-bold text-slate-300 mb-1">Read Token / API Secret</label>
-          <input type="password" id="ns-secret" placeholder="Prefer read-only token"
+          <label class="block text-sm font-bold text-slate-300 mb-1">Nightscout Read Token</label>
+          <input type="password" id="ns-secret" placeholder="readable token"
             class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
-          <p class="mt-1 text-[11px] text-slate-400">API Secret本体より，読み取り専用tokenの使用を推奨します。</p>
+          <p class="mt-1 text-[11px] text-slate-400">読み取り専用tokenのみを使用します。API_SECRETは入力しないでください。</p>
         </div>
       </div>
       <div class="mt-6 flex justify-end gap-3">
@@ -542,7 +563,7 @@
 
     const state = {
       url: localStorage.getItem('ns-url') || '',
-      secret: localStorage.getItem('ns-secret') || '',
+      secret: localStorage.getItem('ns-token') || localStorage.getItem('ns-secret') || '',
       data: { entries: [], treatments: [], profile: null, devicestatus: [] },
       timeRangeHours: 6,
       offsetDays: 0,
@@ -662,12 +683,26 @@
       return qs ? `${path}?${qs}` : path;
     }
 
+    function appendReadToken(endpoint) {
+      const token = (state.secret || '').trim();
+      if (!token) return endpoint;
+      if (/[?&]token=/.test(endpoint)) return endpoint;
+      const separator = endpoint.includes('?') ? '&' : '?';
+      return `${endpoint}${separator}token=${encodeURIComponent(token)}`;
+    }
+
     async function fetchAPI(endpoint) {
       if (!state.url) return null;
+
       const headers = { Accept: 'application/json' };
-      if (state.secret) headers['API-SECRET'] = state.secret;
+      const authedEndpoint = appendReadToken(endpoint);
+
       try {
-        const response = await fetch(`${state.url}${endpoint}`, { headers, cache: 'no-store' });
+        const response = await fetch(`${state.url}${authedEndpoint}`, {
+          headers,
+          cache: 'no-store'
+        });
+
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return await response.json();
       } catch (error) {
@@ -781,7 +816,6 @@
       ];
       return candidates.find(v => Number.isFinite(Number(v)));
     }
-
 
     function isLikelySMB(t) {
       const type = (t.eventType || '').toLowerCase();
@@ -919,6 +953,8 @@
         const type = (t.eventType || '').toLowerCase();
         if (type.includes('temp basal') || type.includes('profile')) return;
 
+        const enteredBy = (t.enteredBy || '').toLowerCase();
+
         const isSMB = isLikelySMB(t);
 
         if (isSMB) smb += insulin;
@@ -951,6 +987,92 @@
         crTotal,
         gmi: a1cResult.gmi,
         adjustedGmi: a1cResult.adjustedGmi
+      };
+    }
+
+    function generateAdj6Advice(stats) {
+      const targetAdj = 6.0;
+      const currentAdj = Number(stats.adjustedGmi || 0);
+      const deltaAdj = currentAdj - targetAdj;
+
+      const tir = Number(stats.tir || 0);
+      const tbr = Number(stats.tbr || 0);
+      const tbr54 = Number(stats.tbr54 || 0);
+      const tar = Number(stats.tar || 0);
+      const tar250 = Number(stats.tar250 || 0);
+      const cv = Number(stats.cv || 0);
+      const mean = Number(stats.mean || 0);
+
+      const tar180Minutes = Math.round(tar * 14.4);
+      const tar250Minutes = Math.round(tar250 * 14.4);
+
+      if (!currentAdj || !mean) {
+        return {
+          title: 'データ不足',
+          main: '7日分のCGMデータが不足しています。',
+          actions: [
+            'Nightscoutのデータ取得を確認する',
+            '少なくとも24時間以上，できれば7日分で評価する'
+          ],
+          level: 'neutral'
+        };
+      }
+
+      if (tbr54 >= 1 || tbr >= 4) {
+        return {
+          title: 'まず低血糖対策',
+          main: `現在ADJ ${currentAdj.toFixed(1)}%。低血糖時間が多いため，6.0%未満を狙う前に安全性を優先してください。`,
+          actions: [
+            `TBR 70未満：${tbr.toFixed(1)}%，TBR 54未満：${tbr54.toFixed(1)}%`,
+            '夜間・運動後・食前低血糖を確認する',
+            '低血糖が出る時間帯の基礎・補正設定を見直す',
+            'TBR 70未満を4%未満，TBR 54未満を1%未満に戻す'
+          ],
+          level: 'danger'
+        };
+      }
+
+      if (deltaAdj <= 0) {
+        return {
+          title: 'ADJ 6.0%未満 達成中',
+          main: `現在ADJ ${currentAdj.toFixed(1)}%。低血糖を増やさず維持する段階です。`,
+          actions: [
+            `TIR ${Math.round(tir)}%を維持する`,
+            `CV ${cv.toFixed(1)}%を36%以下に維持する`,
+            `現在の180超：${tar180Minutes}分/日，250超：${tar250Minutes}分/日`,
+            '食後ピークと夜間低血糖を監視する'
+          ],
+          level: 'good'
+        };
+      }
+
+      // 安全な簡易推定。巨大な値が出ないように，現在の高血糖時間を上限にする。
+      let reduce250 = 0;
+      if (tar250Minutes > 0) {
+        reduce250 = Math.min(tar250Minutes, Math.ceil(deltaAdj * 60));
+      }
+
+      const reduce180 = Math.min(
+        Math.max(0, tar180Minutes - reduce250),
+        Math.ceil(deltaAdj * 120)
+      );
+
+      let priority = '食後ピーク';
+      if (tar250Minutes >= 15) priority = '250 mg/dL超の著明高血糖';
+      else if (tar180Minutes >= 180) priority = '180 mg/dL超の高血糖時間';
+      else if (cv > 36) priority = '血糖変動';
+
+      return {
+        title: 'ADJ 6.0%未満まで',
+        main: `現在ADJ ${currentAdj.toFixed(1)}%。6.0%未満には，ADJをあと約 ${deltaAdj.toFixed(1)}% 下げる必要があります。`,
+        actions: [
+          `現在の180超：${tar180Minutes}分/日，250超：${tar250Minutes}分/日`,
+          `まず250超を約${reduce250}分/日減らす`,
+          `次に180超を約${reduce180}分/日減らす`,
+          `${priority}を優先する`,
+          '安全条件：TBR 70未満は4%未満，TBR 54未満は1%未満，CVは36%以下'
+        ],
+        level: 'warning'
       };
     }
 
@@ -1092,9 +1214,13 @@
           const type = (t.eventType || '').toLowerCase();
           if (type.includes('temp basal') || type.includes('profile')) return;
           const isSMB = isLikelySMB(t);
-          const color = isSMB ? 'rgba(168,85,247,0.7)' : 'rgba(6,182,212,0.7)';
+          const color = isSMB ? 'rgba(168, 85, 247, 0.9)' : 'rgba(6, 182, 212, 0.85)';
           const p = Math.max(3, Math.sqrt(insulin) * 3);
-          annotations[`ins_${i}`] = { type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff', content: `${insulin}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 } };
+          annotations[`ins_${i}`] = {
+            type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff',
+            content: isSMB ? `${insulin}` : `${insulin}`,
+            font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 }
+          };
         }
       });
 
@@ -1428,6 +1554,64 @@
       label.textContent = state.offsetDays === 0 ? 'Today' : state.offsetDays === 1 ? 'Yesterday' : `${state.offsetDays} days ago`;
     }
 
+    let currentAdviceMode = false;
+
+    function renderCurrentAdvice() {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      const sevenDaysAgo = new Date(todayStart);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const stats7d = calcStatsForPeriod(sevenDaysAgo, now);
+      const advice = generateAdj6Advice(stats7d);
+
+      const color =
+        advice.level === 'good' ? 'border-emerald-700/50 bg-emerald-900/20 text-emerald-300' :
+          advice.level === 'danger' ? 'border-red-700/50 bg-red-900/20 text-red-300' :
+            advice.level === 'warning' ? 'border-amber-700/50 bg-amber-900/20 text-amber-300' :
+              'border-slate-700/50 bg-slate-900/20 text-slate-300';
+
+      safeSetText('current-advice-content', '');
+
+      document.getElementById('current-advice-content').innerHTML = `
+    <div class="rounded-lg border ${color} p-2">
+      <div class="text-[14px] font-black mb-1">${advice.title}</div>
+      <div class="text-[11px] text-slate-200 font-semibold leading-snug">${advice.main}</div>
+    </div>
+
+    <div class="space-y-1.5">
+      ${advice.actions.map((a, i) => `
+        <div class="bg-black/25 rounded-lg px-2 py-1.5 border border-slate-700/40">
+          <div class="text-[8px] text-slate-500 font-black tracking-widest">ACTION ${i + 1}</div>
+          <div class="text-[11px] text-slate-200 font-bold leading-snug">${a}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="text-[9px] text-slate-500 leading-snug pt-1">
+      ADJは独自補正式です。低血糖が多い場合は6.0%未満より安全性を優先します。
+    </div>
+  `;
+    }
+
+    function toggleCurrentAdvice() {
+      currentAdviceMode = !currentAdviceMode;
+
+      const normalEl = document.getElementById('current-normal-view');
+      const adviceEl = document.getElementById('current-advice-view');
+
+      if (currentAdviceMode) {
+        renderCurrentAdvice();
+        normalEl.classList.add('hidden');
+        adviceEl.classList.remove('hidden');
+        adviceEl.classList.add('flex');
+      } else {
+        adviceEl.classList.add('hidden');
+        adviceEl.classList.remove('flex');
+        normalEl.classList.remove('hidden');
+      }
+    }
+
     function returnToToday() {
       state.offsetDays = 0;
       state.lastHistoryInteractionAt = 0;
@@ -1459,7 +1643,8 @@
         state.url = document.getElementById('ns-url').value.trim().replace(/\/$/, '');
         state.secret = document.getElementById('ns-secret').value.trim();
         localStorage.setItem('ns-url', state.url);
-        localStorage.setItem('ns-secret', state.secret);
+        localStorage.setItem('ns-token', state.secret);
+        localStorage.removeItem('ns-secret');
         document.getElementById('settings-modal').classList.add('hidden');
         resetDataAndCharts();
         initApp();
@@ -1510,6 +1695,11 @@
 
       document.getElementById('btn-today').addEventListener('click', () => {
         returnToToday();
+      });
+
+      document.getElementById('current-panel').addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        toggleCurrentAdvice();
       });
 
       const resetIdle = () => { idleMinutes = 0; document.body.classList.remove('dimmed'); };
