@@ -782,6 +782,25 @@
       return candidates.find(v => Number.isFinite(Number(v)));
     }
 
+
+    function isLikelySMB(t) {
+      const type = (t.eventType || '').toLowerCase();
+      const enteredBy = (t.enteredBy || '').toLowerCase();
+      const insulin = Number(t.insulin || 0);
+
+      if (!Number.isFinite(insulin) || insulin <= 0) return false;
+
+      return (
+        type.includes('smb') ||
+        t.isSMB === true ||
+        enteredBy.includes('smb') ||
+        (
+          insulin <= 0.4 &&
+          !type.includes('meal')
+        )
+      );
+    }
+
     function updateUI({ dataFetched = false } = {}) {
       const entries = state.data.entries;
       if (!entries.length) return;
@@ -900,16 +919,7 @@
         const type = (t.eventType || '').toLowerCase();
         if (type.includes('temp basal') || type.includes('profile')) return;
 
-        const enteredBy = (t.enteredBy || '').toLowerCase();
-
-        const isSMB =
-          type.includes('smb') ||
-          t.isSMB === true ||
-          enteredBy.includes('smb') ||
-          (
-            insulin <= 0.4 &&
-            !type.includes('meal')
-          );
+        const isSMB = isLikelySMB(t);
 
         if (isSMB) smb += insulin;
         else bolus += insulin;
@@ -1081,7 +1091,7 @@
         if (insulin > 0) {
           const type = (t.eventType || '').toLowerCase();
           if (type.includes('temp basal') || type.includes('profile')) return;
-          const isSMB = type.includes('smb') || t.isSMB === true || t.enteredBy?.toLowerCase?.().includes('smb');
+          const isSMB = isLikelySMB(t);
           const color = isSMB ? 'rgba(168,85,247,0.7)' : 'rgba(6,182,212,0.7)';
           const p = Math.max(3, Math.sqrt(insulin) * 3);
           annotations[`ins_${i}`] = { type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff', content: `${insulin}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 } };
@@ -1173,7 +1183,7 @@
             treats.forEach(t => {
               if (Number(t.carbs) > 0) html += `<div style="font-size:14px;color:#facc15;font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">Carbs:</span> ${t.carbs}g</div>`;
               if (Number(t.insulin) > 0 && !(t.eventType || '').toLowerCase().includes('temp')) {
-                const isSMB = (t.eventType || '').toLowerCase().includes('smb') || t.isSMB === true || t.enteredBy?.toLowerCase?.().includes('smb');
+                const isSMB = isLikelySMB(t);
                 html += `<div style="font-size:14px;color:${isSMB ? '#d8b4fe' : '#67e8f9'};font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">${isSMB ? 'SMB' : 'Bolus'}:</span> ${t.insulin}U</div>`;
               }
             });
