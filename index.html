@@ -61,7 +61,7 @@
 
     .layout-pattern-0 {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: minmax(240px, 35%) 1fr;
+      grid-template-rows: minmax(270px, 38%) 1fr;
       grid-template-areas:
         "current summary"
         "graph graph";
@@ -69,7 +69,7 @@
 
     .layout-pattern-1 {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: minmax(240px, 35%) 1fr;
+      grid-template-rows: minmax(270px, 38%) 1fr;
       grid-template-areas:
         "summary current"
         "graph graph";
@@ -77,7 +77,7 @@
 
     .layout-pattern-2 {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr minmax(240px, 35%);
+      grid-template-rows: 1fr minmax(270px, 38%);
       grid-template-areas:
         "graph graph"
         "current summary";
@@ -85,7 +85,7 @@
 
     .layout-pattern-3 {
       grid-template-columns: 1fr 1fr;
-      grid-template-rows: 1fr minmax(240px, 35%);
+      grid-template-rows: 1fr minmax(270px, 38%);
       grid-template-areas:
         "graph graph"
         "summary current";
@@ -309,11 +309,12 @@
 
                 <div class="grid grid-cols-[auto_1fr_1fr] items-center">
                   <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-slate-300 font-bold uppercase">AVG BG</div>
-                  <div class="text-center font-black text-white text-2xl sm:text-3xl leading-none"><span
-                      id="td-mean">0</span><span class="text-[11px] font-normal text-slate-400 ml-0.5">mg/dL</span>
+                  <div class="text-center font-black text-white text-xl sm:text-2xl leading-none">
+                   <span id="td-mean">0</span><span class="text-[11px] font-normal text-slate-400 ml-0.5">mg/dL</span>
                   </div>
-                  <div class="text-center font-bold text-slate-400 text-2xl sm:text-3xl leading-none"><span
-                      id="7d-mean">0</span></div>
+                  <div class="text-center font-bold text-slate-400 text-xl sm:text-2xl leading-none">
+                    <span id="7d-mean">0</span>
+                  </div>
                 </div>
 
                 <div class="grid grid-cols-[auto_1fr_1fr] items-center border-t border-slate-700/50 pt-1">
@@ -425,7 +426,8 @@
                 <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>Profiles <span
                   class="text-[11px] font-normal text-slate-400">Today vs 7-Days</span>
               </h2>
-              <div class="flex-1 flex flex-col min-h-0 w-full border border-slate-600/50 bg-slate-800/40 rounded">
+              <div
+                class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 py-1 min-h-0 justify-start gap-1 overflow-y-auto">
                 <div class="flex-1 flex relative w-full border-b border-slate-600/50 min-h-0">
                   <div class="flex-1 relative min-h-0 p-1"><canvas id="agpProfileChart"></canvas></div>
                   <div
