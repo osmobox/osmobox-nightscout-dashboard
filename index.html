@@ -60,36 +60,36 @@
     }
 
     .layout-pattern-0 {
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: fit-content(42%) minmax(0, 1fr);
-      grid-template-areas:
-        "current summary"
-        "graph graph";
-    }
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(310px, 42%) 1fr;
+  grid-template-areas:
+    "current summary"
+    "graph graph";
+}
 
-    .layout-pattern-1 {
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: fit-content(42%) minmax(0, 1fr);
-      grid-template-areas:
-        "summary current"
-        "graph graph";
-    }
+.layout-pattern-1 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(310px, 42%) 1fr;
+  grid-template-areas:
+    "summary current"
+    "graph graph";
+}
 
-    .layout-pattern-2 {
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: minmax(0, 1fr) fit-content(42%);
-      grid-template-areas:
-        "graph graph"
-        "current summary";
-    }
+.layout-pattern-2 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr minmax(310px, 42%);
+  grid-template-areas:
+    "graph graph"
+    "current summary";
+}
 
-    .layout-pattern-3 {
-      grid-template-columns: 1fr 1fr;
-      grid-template-rows: minmax(0, 1fr) fit-content(42%);
-      grid-template-areas:
-        "graph graph"
-        "summary current";
-    }
+.layout-pattern-3 {
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr minmax(310px, 42%);
+  grid-template-areas:
+    "graph graph"
+    "summary current";
+}
 
     @media (max-width: 768px) {
       #grid-container {
