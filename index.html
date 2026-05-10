@@ -1,1084 +1,1574 @@
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Nightscout Dashboard</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Chart.js & Plugins -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @keyframes bg-breathe {
-            0% { background-color: #000000; }
-            50% { background-color: #0b1120; }
-            100% { background-color: #000000; }
-        }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Nightscout Dashboard Stable</title>
 
-        body {
-            background-color: #000000;
-            color: #e2e8f0;
-            margin: 0;
-            padding: 0;
-            overflow: hidden; 
-            height: 100dvh;
-            width: 100vw;
-            animation: bg-breathe 60s infinite alternate ease-in-out;
-            transition: filter 1s ease-in-out;
-            font-family: 'Inter', system-ui, sans-serif;
-            -webkit-font-smoothing: antialiased;
-        }
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
 
-        #shift-container {
-            width: 100%;
-            height: 100%;
-            transition: transform 1s ease-in-out;
-        }
+  <style>
+    :root {
+      --panel-bg: rgba(15, 23, 42, 0.82);
+      --panel-border: rgba(71, 85, 105, 0.45);
+    }
 
-        #grid-container {
-            display: grid;
-            gap: 0.5rem;
-            padding: 0.5rem;
-            height: 100%;
-            width: 100%;
-            box-sizing: border-box;
-            transition: all 1s ease-in-out;
-        }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+      background: #000;
+      color: #e2e8f0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
 
-        .layout-pattern-0 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: minmax(275px, max-content) 1fr;
-            grid-template-areas: 
-                "current summary"
-                "graph graph";
-        }
-        .layout-pattern-1 {
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr minmax(275px, max-content);
-            grid-template-areas: 
-                "graph graph"
-                "current summary";
-        }
+    body.dimmed {
+      opacity: 0.82;
+    }
 
-        @media (max-width: 768px) {
-            #grid-container {
-                display: flex;
-                flex-direction: column;
-                overflow-y: auto; 
-            }
-            .area-graph { min-height: 250px; flex: 1; }
-            .area-current { min-height: 160px; }
-            .area-summary { min-height: 250px; }
-            .panel { flex: none; }
-        }
+    #shift-container {
+      width: 100%;
+      height: 100%;
+      transition: transform 1s ease-in-out;
+      will-change: transform;
+    }
 
-        .area-current { grid-area: current; }
-        .area-summary { grid-area: summary; }
-        .area-graph { grid-area: graph; min-height: 0; min-width: 0; }
+    #grid-container {
+      display: grid;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
+      transition: grid-template-rows 800ms ease-in-out;
+    }
 
-        .panel {
-            background-color: rgba(15, 23, 42, 0.75);
-            border-radius: 0.75rem;
-            border: 1px solid rgba(71, 85, 105, 0.4);
-            padding: 0.5rem;
-            display: flex;
-            flex-direction: column;
-            backdrop-filter: blur(4px);
-            overflow: hidden;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
+    .layout-pattern-0 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(240px, 35%) 1fr;
+      grid-template-areas:
+        "current summary"
+        "graph graph";
+    }
 
-        #custom-tooltip {
-            position: fixed;
-            background: rgba(15, 23, 42, 0.95);
-            border: 1px solid rgba(71, 85, 105, 0.6);
-            color: #fff;
-            padding: 6px 10px;
-            border-radius: 8px;
-            font-size: 13px;
-            pointer-events: none;
-            z-index: 9999;
-            transform: translate(-50%, -100%);
-            margin-top: -10px;
-            backdrop-filter: blur(4px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-        }
-    </style>
+    .layout-pattern-1 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(240px, 35%) 1fr;
+      grid-template-areas:
+        "summary current"
+        "graph graph";
+    }
+
+    .layout-pattern-2 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr minmax(240px, 35%);
+      grid-template-areas:
+        "graph graph"
+        "current summary";
+    }
+
+    .layout-pattern-3 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr minmax(240px, 35%);
+      grid-template-areas:
+        "graph graph"
+        "summary current";
+    }
+
+    @media (max-width: 768px) {
+      #grid-container {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .area-graph {
+        min-height: 230px;
+        flex: 1;
+      }
+
+      .area-current {
+        min-height: 180px;
+      }
+
+      .area-summary {
+        min-height: 240px;
+      }
+
+      .panel {
+        flex: none;
+      }
+    }
+
+    .area-current {
+      grid-area: current;
+    }
+
+    .area-summary {
+      grid-area: summary;
+    }
+
+    .area-graph {
+      grid-area: graph;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .panel {
+      background-color: var(--panel-bg);
+      border-radius: 0.75rem;
+      border: 1px solid var(--panel-border);
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .chart-tooltip {
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: 8px;
+      color: white;
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+      transition: opacity .12s ease, left .08s ease, top .08s ease;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(71, 85, 105, 0.6);
+      padding: 8px 12px;
+      min-width: 120px;
+    }
+  </style>
 </head>
+
 <body class="select-none text-slate-200">
 
-<div id="shift-container">
+  <div id="shift-container">
     <div id="grid-container" class="layout-pattern-0">
-        
-        <div class="panel area-current relative flex flex-col justify-center items-center px-2">
-            <div class="absolute top-2 right-2 flex gap-1">
-                <button id="btn-fullscreen" class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50">
-                    <i data-lucide="maximize" class="w-4 h-4"></i>
-                </button>
-                <button id="btn-settings" class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50">
-                    <i data-lucide="settings" class="w-4 h-4"></i>
-                </button>
-            </div>
-            
-            <div class="absolute top-2 left-2 flex flex-col items-start">
-                <div class="text-[11px] text-blue-400 font-bold uppercase tracking-wider" id="last-update-time">Loading...</div>
-                <div class="text-[10px] text-slate-500 font-medium" id="sync-time">Sync: --:--</div>
-            </div>
-            
-            <div class="flex-1 flex w-full h-full items-center justify-center mt-4 gap-6">
-                <!-- BG & Trend -->
-                <div class="flex flex-col items-center justify-center">
-                    <div class="flex items-center gap-2">
-                        <div id="current-bg" class="text-8xl lg:text-9xl font-black tabular-nums tracking-tighter leading-none" style="text-shadow: 0 0 20px rgba(0,0,0,0.5);">---</div>
-                        <div id="trend-arrow" class="text-6xl lg:text-7xl font-black leading-none" style="text-shadow: 0 0 10px rgba(0,0,0,0.5);"></div>
-                    </div>
-                    <div id="bg-delta" class="text-xl lg:text-2xl text-slate-400 mt-1 font-medium">--</div>
-                </div>
 
-                <!-- IOB / COB & Res/CAGE -->
-                <div class="flex flex-col gap-2">
-                    <div class="bg-blue-900/30 border border-blue-800/50 rounded flex flex-col items-center justify-center py-1.5 px-3 shadow-inner">
-                        <span class="text-[10px] font-bold text-blue-400 uppercase tracking-wider mb-0.5">IOB</span>
-                        <div class="text-base font-black text-blue-100 leading-none"><span id="current-iob">--</span><span class="text-[11px] font-normal ml-0.5 text-blue-300">U</span></div>
-                    </div>
-                    <div class="bg-yellow-900/30 border border-yellow-800/50 rounded flex flex-col items-center justify-center py-1.5 px-3 shadow-inner">
-                        <span class="text-[10px] font-bold text-yellow-500 uppercase tracking-wider mb-0.5">COB</span>
-                        <div class="text-base font-black text-yellow-100 leading-none"><span id="current-cob">--</span><span class="text-[11px] font-normal ml-0.5 text-yellow-300">g</span></div>
-                    </div>
-                    
-                    <div class="flex flex-col text-[10px] text-slate-500 font-medium mt-1 items-end pr-1 gap-0.5">
-                        <span>Res: <span id="current-res" class="text-slate-400">--</span></span>
-                        <span>CAGE: <span id="current-cage" class="text-slate-400">--</span></span>
-                    </div>
-                </div>
-            </div>
-            <div id="error-message" class="text-red-400 text-xs mt-2 hidden text-center bg-red-900/30 p-1 rounded w-full"></div>
+      <div class="panel area-current relative flex flex-col justify-center items-center px-2">
+        <div class="absolute top-2 right-2 flex gap-1 z-10">
+          <button id="btn-fullscreen"
+            class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50" aria-label="fullscreen">
+            <i data-lucide="maximize" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-settings" class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50"
+            aria-label="settings">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+          </button>
         </div>
 
-        <div class="panel area-summary cursor-pointer relative group flex flex-col min-h-0" id="summary-panel" onclick="toggleSummary()">
-            <!-- Hover Hint -->
-            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-10 border border-slate-600 z-50">
-                Tap to toggle AGP
-            </div>
-
-            <div class="flex-1 flex gap-3 min-h-0 w-full h-full">
-                <!-- SHARED TIR Visualizer -->
-                <div class="w-20 bg-slate-800/40 rounded border border-slate-700/40 p-1 flex flex-col items-center justify-between min-h-0 flex-none">
-                    <div class="flex justify-around w-full px-1 mb-1 flex-none">
-                        <span class="text-[9px] font-bold text-slate-300">Today</span>
-                        <span class="text-[9px] font-bold text-slate-400">7 Days</span>
-                    </div>
-                    <div class="flex-1 flex justify-around w-full items-end pb-1 min-h-0">
-                        <div class="flex flex-col items-center h-full w-4">
-                            <div class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700/50">
-                                <div id="td-tar" class="bg-yellow-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                <div id="td-tir" class="bg-green-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                <div id="td-tbr" class="bg-red-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                            </div>
-                            <span id="td-tir-val" class="text-[9px] font-black text-green-400 mt-1.5 leading-none">0%</span>
-                        </div>
-                        <div class="flex flex-col items-center h-full w-4 opacity-80">
-                            <div class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700/50">
-                                <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                <div id="7d-tir" class="bg-green-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                                <div id="7d-tbr" class="bg-red-500 w-full transition-all duration-1000" style="height: 0%"></div>
-                            </div>
-                            <span id="7d-tir-val" class="text-[9px] font-black text-green-500 mt-1.5 leading-none">0%</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- RIGHT CONTENT (TOGGLEABLE) -->
-                <div class="flex-1 flex flex-col min-h-0 relative">
-                    
-                    <!-- VIEW 1: Default Summary -->
-                    <div id="summary-default" class="flex flex-col min-h-0 w-full h-full">
-                        <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1.5 flex-none pl-1">
-                            <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Summary <span class="text-[11px] font-normal text-slate-400">(Today vs 7-Days)</span>
-                        </h2>
-                        
-                        <!-- Metrics Table -->
-                        <div class="flex-1 flex flex-col bg-slate-800/30 rounded border border-slate-700/40 px-2 py-1.5 min-h-0 justify-between gap-0.5">
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-end border-b border-slate-700/50 pb-0.5 flex-none">
-                                <div class="w-16"></div>
-                                <div class="text-center text-[11px] font-bold text-slate-300">Today</div>
-                                <div class="text-center text-[11px] font-bold text-slate-400">7 Days</div>
-                            </div>
-
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-center flex-1">
-                                <div class="w-16 text-[11px] text-slate-400 font-semibold tracking-wide">AVG BG</div>
-                                <div class="text-center text-lg font-black text-slate-200"><span id="td-mean">0</span></div>
-                                <div class="text-center text-lg font-bold text-slate-400"><span id="7d-mean">0</span></div>
-                            </div>
-
-                            <div class="flex flex-col bg-blue-900/10 rounded py-1 px-1 flex-[1.5] justify-center">
-                                <div class="grid grid-cols-[auto_1fr_1fr] items-center mb-0.5">
-                                    <div class="w-16 text-[11px] text-blue-400 font-bold tracking-wide pl-1">TDD</div>
-                                    <div class="text-center text-xl font-black text-blue-300"><span id="td-tdd">0.0</span><span class="text-[10px] font-normal ml-0.5">U</span></div>
-                                    <div class="text-center text-lg font-bold text-blue-300/70"><span id="7d-tdd">0.0</span></div>
-                                </div>
-                                
-                                <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 px-1">
-                                    <div class="w-16"></div>
-                                    <div class="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-800">
-                                        <div id="td-basal-bar" class="bg-slate-400 h-full"></div><div id="td-smb-bar" class="bg-purple-500 h-full"></div><div id="td-bolus-bar" class="bg-cyan-400 h-full"></div>
-                                    </div>
-                                    <div class="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-800 opacity-60">
-                                        <div id="7d-basal-bar" class="bg-slate-400 h-full"></div><div id="7d-smb-bar" class="bg-purple-500 h-full"></div><div id="7d-bolus-bar" class="bg-cyan-400 h-full"></div>
-                                    </div>
-                                </div>
-                                
-                                <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-3 px-1 mt-1">
-                                    <div class="w-16"></div>
-                                    <div class="flex justify-between px-0.5">
-                                        <div class="text-center leading-none"><div class="text-[9px] text-slate-500 mb-0.5">Basal</div><div id="td-basal" class="text-[10px] font-bold text-slate-300">0.0</div></div>
-                                        <div class="text-center leading-none"><div class="text-[9px] text-purple-500/80 mb-0.5">SMB</div><div id="td-smb" class="text-[10px] font-bold text-purple-400">0.0</div></div>
-                                        <div class="text-center leading-none"><div class="text-[9px] text-cyan-500/80 mb-0.5">Bolus</div><div id="td-bolus" class="text-[10px] font-bold text-cyan-300">0.0</div></div>
-                                    </div>
-                                    <div class="flex justify-between px-0.5 opacity-80">
-                                        <div class="text-center leading-none"><div class="text-[9px] text-slate-500 mb-0.5">Basal</div><div id="7d-basal" class="text-[10px] font-bold text-slate-300">0.0</div></div>
-                                        <div class="text-center leading-none"><div class="text-[9px] text-purple-500/80 mb-0.5">SMB</div><div id="7d-smb" class="text-[10px] font-bold text-purple-400">0.0</div></div>
-                                        <div class="text-center leading-none"><div class="text-[9px] text-cyan-500/80 mb-0.5">Bolus</div><div id="7d-bolus" class="text-[10px] font-bold text-cyan-300">0.0</div></div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- CARBS Row -->
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-center flex-1">
-                                <div class="w-16 text-[11px] text-yellow-500 font-semibold tracking-wide">CARBS</div>
-                                <div class="text-center text-lg font-black text-yellow-400"><span id="td-carbs">0</span><span class="text-[10px] font-normal ml-0.5">g</span></div>
-                                <div class="text-center text-lg font-bold text-yellow-500/70"><span id="7d-carbs">0</span></div>
-                            </div>
-
-                            <!-- CR Row -->
-                            <div class="grid grid-cols-[auto_1fr_1fr] items-center flex-1 border-t border-slate-700/30 pt-0.5 mt-0.5">
-                                <div class="w-16 flex flex-col leading-none">
-                                    <span class="text-[11px] text-orange-400 font-bold tracking-wide">EST. CR</span>
-                                    <span class="text-[9px] text-orange-500/70 mt-0.5">Bolus / +SMB</span>
-                                </div>
-                                <div class="text-center text-[13px] font-black text-orange-300">
-                                    <span id="td-cr-bolus">0.0</span><span class="text-slate-500 mx-0.5 font-medium">/</span><span id="td-cr-total">0.0</span>
-                                </div>
-                                <div class="text-center text-[13px] font-bold text-orange-400/70">
-                                    <span id="7d-cr-bolus">0.0</span><span class="text-slate-500 mx-0.5 font-medium">/</span><span id="7d-cr-total">0.0</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- VIEW 2: AGP -->
-                    <div id="summary-agp" class="hidden absolute inset-0 flex-col min-h-0 w-full h-full">
-                        <h2 class="text-sm font-bold text-slate-200 mb-1 flex items-center gap-1.5 flex-none pl-1">
-                            <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>Profiles <span class="text-[11px] font-normal text-slate-400">(Today vs 7-Days)</span>
-                        </h2>
-                        
-                        <div class="flex-1 flex flex-col min-h-0 w-full border border-slate-700/40 bg-slate-800/30 rounded">
-                            <!-- Today Profile with CV -->
-                            <div class="flex-1 flex relative w-full border-b border-slate-700/50 min-h-0">
-                                <div class="flex-1 relative min-h-0 p-1">
-                                    <canvas id="agpProfileChart"></canvas>
-                                </div>
-                                <div class="w-12 flex flex-col items-center justify-center border-l border-slate-700/50 flex-none bg-slate-800/50 rounded-tr">
-                                    <span class="text-[9px] font-bold text-slate-400 leading-none">CV</span>
-                                    <div class="text-sm font-black text-slate-200 mt-1 leading-none"><span id="td-cv-agp">--</span><span class="text-[9px]">%</span></div>
-                                </div>
-                            </div>
-                            
-                            <!-- 7-Days AGP with CV -->
-                            <div class="flex-1 flex relative w-full min-h-0">
-                                <div class="flex-1 relative min-h-0 p-1">
-                                    <canvas id="agpChart"></canvas>
-                                </div>
-                                <div class="w-12 flex flex-col items-center justify-center border-l border-slate-700/50 flex-none bg-slate-800/50 rounded-br">
-                                    <span class="text-[9px] font-bold text-slate-400 leading-none">CV</span>
-                                    <div class="text-sm font-black text-slate-200 mt-1 leading-none"><span id="7d-cv-agp">--</span><span class="text-[9px]">%</span></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
+        <div class="absolute top-2 left-2 flex flex-col items-start z-10">
+          <div class="text-[12px] text-blue-400 font-bold uppercase tracking-wider bg-black/30 px-1 rounded"
+            id="last-update-time">Loading...</div>
+          <div class="text-[10px] text-slate-400 font-medium" id="sync-time">Sync: --:--</div>
         </div>
 
-        <div class="panel area-graph flex flex-col min-h-0">
-            <div class="flex justify-between items-center mb-1 px-1 flex-none">
-                <div class="flex items-center gap-1">
-                    <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
-                    <span id="chart-date-label" class="font-bold text-slate-300 w-24 text-center text-xs">Today</span>
-                    <button id="btn-next" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed" disabled><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
-                </div>
-                <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium">
-                    <button class="time-btn px-2.5 py-1 rounded transition" data-hours="3">3h</button>
-                    <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow" data-hours="6">6h</button>
-                    <button class="time-btn px-2.5 py-1 rounded transition" data-hours="12">12h</button>
-                    <button class="time-btn px-2.5 py-1 rounded transition" data-hours="24">24h</button>
-                </div>
+        <div class="flex-1 flex w-full h-full items-center justify-center mt-3 gap-2 sm:gap-6 relative">
+          <div class="flex flex-col items-center justify-center flex-shrink-0">
+            <div class="flex items-center gap-2 sm:gap-4">
+              <div id="current-bg"
+                class="text-[5.5rem] sm:text-[7rem] md:text-[8rem] lg:text-[9rem] font-black tabular-nums tracking-tighter leading-none"
+                style="text-shadow:0 0 20px rgba(0,0,0,0.5);">---</div>
+              <div id="trend-arrow"
+                class="text-[4rem] sm:text-[5rem] md:text-[6rem] lg:text-[7rem] font-black leading-none"
+                style="text-shadow:0 0 10px rgba(0,0,0,0.5);"></div>
             </div>
-            
-            <!-- Basal Y-Axis Info for Main Chart -->
-            <div class="absolute right-3 top-10 text-[9px] text-blue-400/70 font-mono text-right pointer-events-none hidden md:block">Basal (U/h)</div>
-            
-            <div class="flex-1 relative w-full h-full min-h-0">
-                <canvas id="bgChart"></canvas>
+            <div id="bg-delta" class="text-xl lg:text-3xl text-slate-300 mt-1 font-bold">--</div>
+          </div>
+
+          <div class="flex flex-col gap-2 flex-shrink-0">
+            <div
+              class="bg-blue-900/40 border border-blue-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
+              <span class="text-[11px] font-bold text-blue-300 uppercase tracking-wider mb-0.5">IOB</span>
+              <div class="text-xl sm:text-2xl font-black text-white leading-none"><span id="current-iob">--</span><span
+                  class="text-[12px] font-normal ml-0.5 text-blue-200">U</span></div>
             </div>
+            <div
+              class="bg-yellow-900/40 border border-yellow-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
+              <span class="text-[11px] font-bold text-yellow-400 uppercase tracking-wider mb-0.5">COB</span>
+              <div class="text-xl sm:text-2xl font-black text-white leading-none"><span id="current-cob">--</span><span
+                  class="text-[12px] font-normal ml-0.5 text-yellow-200">g</span></div>
+            </div>
+            <div class="flex flex-col text-[11px] text-slate-400 font-bold mt-1 items-end pr-1 gap-0.5">
+              <span>Res: <span id="current-res" class="text-slate-200">--</span></span>
+              <span>CAGE: <span id="current-cage" class="text-slate-200">--</span></span>
+            </div>
+          </div>
         </div>
+        <div id="error-message"
+          class="absolute bottom-2 text-red-400 text-xs hidden text-center bg-red-900/80 px-3 py-1 rounded-full w-3/4 max-w-xs border border-red-500">
+        </div>
+      </div>
+
+      <div class="panel area-summary cursor-pointer relative group flex flex-col min-h-0" id="summary-panel">
+        <div
+          class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-50 border border-slate-600">
+          Tap to toggle AGP
+        </div>
+
+        <div class="flex-1 flex gap-2 sm:gap-3 min-h-0 w-full h-full">
+          <div
+            class="w-20 sm:w-24 bg-slate-800/60 rounded border border-slate-600/50 p-1 flex flex-col items-center justify-between min-h-0 flex-none shadow-inner">
+            <div class="text-[12px] font-black text-green-400 tracking-widest leading-none mt-0.5 mb-1">TIR</div>
+            <div class="flex justify-around w-full px-1 mb-1 flex-none">
+              <span class="text-[11px] font-bold text-slate-200">TD</span>
+              <span class="text-[11px] font-bold text-slate-400">7D</span>
+            </div>
+            <div class="flex-1 flex justify-around w-full items-end pb-1 min-h-0">
+              <div class="flex flex-col items-center h-full w-3 sm:w-4">
+                <div
+                  class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700">
+                  <div id="td-tar" class="bg-yellow-400 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="td-tir" class="bg-green-400 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="td-tbr" class="bg-red-500 w-full transition-all duration-700" style="height:0%"></div>
+                </div>
+                <span id="td-tir-val"
+                  class="text-[11px] sm:text-sm font-black text-green-400 mt-1.5 leading-none">0%</span>
+              </div>
+              <div class="flex flex-col items-center h-full w-3 sm:w-4 opacity-80">
+                <div
+                  class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700">
+                  <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="7d-tir" class="bg-green-500 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="7d-tbr" class="bg-red-600 w-full transition-all duration-700" style="height:0%"></div>
+                </div>
+                <span id="7d-tir-val"
+                  class="text-[11px] sm:text-sm font-black text-green-500 mt-1.5 leading-none">0%</span>
+              </div>
+            </div>
+            <div class="w-full border-t border-slate-700/60 mt-1 pt-1 flex-none">
+              <div class="text-[9px] font-black text-slate-400 tracking-widest text-center leading-none mb-1">TIR SCORE
+              </div>
+              <div class="flex justify-around w-full items-center leading-none">
+                <span id="td-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-300">0</span>
+                <span id="7d-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-500/90">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex-1 flex flex-col min-h-0 relative">
+            <div id="summary-default" class="flex flex-col min-h-0 w-full h-full">
+              <h2 class="text-sm sm:text-base font-bold text-white mb-1 flex items-center gap-1.5 flex-none pl-1">
+                <i data-lucide="bar-chart-2" class="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400"></i>Summary
+              </h2>
+
+              <div
+                class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 py-1.5 min-h-0 justify-center gap-1.5 overflow-y-auto">
+                <div class="grid grid-cols-[auto_1fr_1fr] items-end border-b border-slate-600/50 pb-0.5 flex-none">
+                  <div class="w-16 sm:w-20"></div>
+                  <div
+                    class="text-center text-[12px] sm:text-[14px] font-black text-white tracking-widest leading-none">
+                    Today</div>
+                  <div
+                    class="text-center text-[12px] sm:text-[14px] font-bold text-slate-400 tracking-widest leading-none">
+                    7 Days</div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center">
+                  <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-slate-300 font-bold uppercase">AVG BG</div>
+                  <div class="text-center font-black text-white text-2xl sm:text-3xl leading-none"><span
+                      id="td-mean">0</span><span class="text-[11px] font-normal text-slate-400 ml-0.5">mg/dL</span>
+                  </div>
+                  <div class="text-center font-bold text-slate-400 text-2xl sm:text-3xl leading-none"><span
+                      id="7d-mean">0</span></div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center border-t border-slate-700/50 pt-1">
+                  <div class="w-16 sm:w-20 flex flex-col leading-none">
+                    <span class="text-[11px] sm:text-[13px] text-pink-400 font-bold uppercase">GMI<span
+                        class="text-slate-500 mx-0.5">/</span>Adj</span>
+                    <span class="text-[8px] text-pink-500/70 mt-0.5 font-medium">Adj is experimental</span>
+                  </div>
+                  <div
+                    class="text-center font-black text-pink-300 text-base sm:text-lg leading-none flex items-center justify-center gap-0.5">
+                    <span id="td-gmi">0.0</span><span
+                      class="text-[10px] text-pink-500/80 font-normal mr-0.5">%</span><span
+                      class="text-[10px] text-slate-400 font-normal">/</span><span id="td-ea1c"
+                      class="text-pink-200">0.0</span><span class="text-[10px] text-pink-400/80 font-normal">%</span>
+                  </div>
+                  <div
+                    class="text-center font-bold text-pink-500/80 text-base sm:text-lg leading-none flex items-center justify-center gap-0.5">
+                    <span id="7d-gmi">0.0</span><span class="text-[10px] text-slate-600 font-normal">/</span><span
+                      id="7d-ea1c">0.0</span>
+                  </div>
+                </div>
+
+                <div class="flex flex-col bg-blue-900/20 rounded py-1 px-1 border border-blue-800/30">
+                  <div class="grid grid-cols-[auto_1fr_1fr] items-center mb-0.5">
+                    <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-blue-400 font-bold pl-1 uppercase">TDD
+                    </div>
+                    <div class="text-center font-black text-blue-200 text-lg sm:text-xl leading-none"><span
+                        id="td-tdd">0.0</span><span class="text-[11px] font-normal text-blue-400 ml-0.5">U</span></div>
+                    <div class="text-center font-bold text-blue-400/80 text-lg sm:text-xl leading-none"><span
+                        id="7d-tdd">0.0</span></div>
+                  </div>
+                  <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 px-1">
+                    <div class="w-16 sm:w-20"></div>
+                    <div class="flex h-2 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50">
+                      <div id="td-basal-bar" class="bg-slate-400 h-full"></div>
+                      <div id="td-smb-bar" class="bg-purple-400 h-full"></div>
+                      <div id="td-bolus-bar" class="bg-cyan-400 h-full"></div>
+                    </div>
+                    <div
+                      class="flex h-2 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-60">
+                      <div id="7d-basal-bar" class="bg-slate-400 h-full"></div>
+                      <div id="7d-smb-bar" class="bg-purple-400 h-full"></div>
+                      <div id="7d-bolus-bar" class="bg-cyan-400 h-full"></div>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 px-1 mt-1.5">
+                    <div class="w-16 sm:w-20"></div>
+                    <div class="flex justify-between px-0.5">
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-slate-400 mb-0.5">Basal</div>
+                        <div id="td-basal" class="text-[11px] sm:text-[12px] font-bold text-slate-200">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-purple-400 mb-0.5">SMB</div>
+                        <div id="td-smb" class="text-[11px] sm:text-[12px] font-bold text-purple-200">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-cyan-400 mb-0.5">Bolus</div>
+                        <div id="td-bolus" class="text-[11px] sm:text-[12px] font-bold text-cyan-200">0.0</div>
+                      </div>
+                    </div>
+                    <div class="flex justify-between px-0.5 opacity-80">
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-slate-500 mb-0.5">Basal</div>
+                        <div id="7d-basal" class="text-[11px] sm:text-[12px] font-bold text-slate-300">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-purple-500/80 mb-0.5">SMB</div>
+                        <div id="7d-smb" class="text-[11px] sm:text-[12px] font-bold text-purple-400">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-cyan-500/80 mb-0.5">Bolus</div>
+                        <div id="7d-bolus" class="text-[11px] sm:text-[12px] font-bold text-cyan-400">0.0</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center">
+                  <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-yellow-400 font-bold uppercase">CARBS</div>
+                  <div class="text-center font-black text-yellow-300 text-lg sm:text-xl leading-none"><span
+                      id="td-carbs">0</span><span class="text-[11px] font-normal text-yellow-500 ml-0.5">g</span></div>
+                  <div class="text-center font-bold text-yellow-500/80 text-lg sm:text-xl leading-none"><span
+                      id="7d-carbs">0</span></div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center border-t border-slate-700/50 pt-1">
+                  <div class="w-16 sm:w-20 flex flex-col leading-none">
+                    <span class="text-[12px] sm:text-[14px] text-orange-400 font-bold uppercase">EST. CR</span>
+                    <span class="text-[9px] text-orange-500/70 mt-0.5 font-medium">Bolus / +SMB</span>
+                  </div>
+                  <div
+                    class="text-center font-black text-orange-200 text-sm sm:text-base flex justify-center gap-1 items-center leading-none">
+                    <span id="td-cr-bolus">0.0</span><span class="text-slate-500 text-[10px] font-medium">/</span><span
+                      id="td-cr-total" class="text-orange-300">0.0</span><span
+                      class="text-[9px] text-orange-500/70 font-normal ml-0.5">g/U</span>
+                  </div>
+                  <div
+                    class="text-center font-bold text-orange-500/80 text-sm sm:text-base flex justify-center gap-1 items-center leading-none">
+                    <span id="7d-cr-bolus">0.0</span><span class="text-slate-600 text-[10px] font-medium">/</span><span
+                      id="7d-cr-total">0.0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="summary-agp" class="hidden absolute inset-0 flex-col min-h-0 w-full h-full">
+              <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-1.5 flex-none pl-1">
+                <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>Profiles <span
+                  class="text-[11px] font-normal text-slate-400">Today vs 7-Days</span>
+              </h2>
+              <div class="flex-1 flex flex-col min-h-0 w-full border border-slate-600/50 bg-slate-800/40 rounded">
+                <div class="flex-1 flex relative w-full border-b border-slate-600/50 min-h-0">
+                  <div class="flex-1 relative min-h-0 p-1"><canvas id="agpProfileChart"></canvas></div>
+                  <div
+                    class="w-12 flex flex-col items-center justify-center border-l border-slate-600/50 flex-none bg-slate-900/40 rounded-tr">
+                    <span class="text-[10px] font-bold text-slate-400 leading-none">CV</span>
+                    <div class="text-sm font-black text-white mt-1 leading-none"><span id="td-cv-agp">--</span><span
+                        class="text-[9px]">%</span></div>
+                  </div>
+                </div>
+                <div class="flex-1 flex relative w-full min-h-0">
+                  <div class="flex-1 relative min-h-0 p-1"><canvas id="agpChart"></canvas></div>
+                  <div
+                    class="w-12 flex flex-col items-center justify-center border-l border-slate-600/50 flex-none bg-slate-900/40 rounded-br">
+                    <span class="text-[10px] font-bold text-slate-400 leading-none">CV</span>
+                    <div class="text-sm font-black text-white mt-1 leading-none"><span id="7d-cv-agp">--</span><span
+                        class="text-[9px]">%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <div class="panel area-graph flex flex-col min-h-0 relative">
+        <div class="flex justify-between items-center mb-1 px-1 flex-none relative">
+          <div class="flex items-center gap-1">
+            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <span id="chart-date-label" class="font-bold text-slate-300 w-24 text-center text-xs">Today</span>
+            <button id="btn-next"
+              class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed"
+              disabled>
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+            <button id="btn-today"
+              class="px-2 py-1 bg-slate-700/50 hover:bg-slate-600 rounded text-[11px] font-bold text-slate-200 transition">Today</button>
+          </div>
+          <div class="hidden sm:block text-[10px] text-slate-400 font-medium">← Drag to Pan →</div>
+          <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium">
+            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="3">3h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow"
+              data-hours="6">6h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="12">12h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="24">24h</button>
+          </div>
+        </div>
+        <div
+          class="absolute right-3 top-10 text-[10px] text-right pointer-events-none hidden md:flex z-10 flex-col items-end gap-0.5">
+          <div class="text-blue-400 font-bold">Basal (U/h)</div>
+          <div class="text-sky-400 font-bold">IOB (U)</div>
+        </div>
+        <div class="flex-1 relative w-full h-full min-h-0">
+          <canvas id="bgChart"></canvas>
+        </div>
+      </div>
 
     </div>
-</div>
+  </div>
 
-<div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4">
-    <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-700">
-        <h2 class="text-xl font-bold mb-4 text-white flex items-center gap-2"><i data-lucide="settings" class="w-5 h-5"></i>Settings</h2>
-        <div class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium text-slate-400 mb-1">Nightscout URL</label>
-                <input type="text" id="ns-url" placeholder="https://your-site.herokuapp.com" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-slate-400 mb-1">API Secret / Token (Optional)</label>
-                <input type="password" id="ns-secret" placeholder="API Secret or Token" class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-            </div>
+  <div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/60">
+    <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-600">
+      <h2 class="text-xl font-black mb-4 text-white flex items-center gap-2"><i data-lucide="settings"
+          class="w-5 h-5"></i>Settings</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-bold text-slate-300 mb-1">Nightscout URL</label>
+          <input type="text" id="ns-url" placeholder="https://your-site.example.com"
+            class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
         </div>
-        <div class="mt-6 flex justify-end gap-3">
-            <button id="btn-cancel-settings" class="px-4 py-2 rounded text-sm text-slate-300 hover:bg-slate-700 transition">Cancel</button>
-            <button id="btn-save-settings" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition font-bold">Save & Connect</button>
+        <div>
+          <label class="block text-sm font-bold text-slate-300 mb-1">Read Token / API Secret</label>
+          <input type="password" id="ns-secret" placeholder="Prefer read-only token"
+            class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
+          <p class="mt-1 text-[11px] text-slate-400">API Secret本体より，読み取り専用tokenの使用を推奨します。</p>
         </div>
+      </div>
+      <div class="mt-6 flex justify-end gap-3">
+        <button id="btn-cancel-settings"
+          class="px-4 py-2 rounded text-sm text-slate-200 hover:bg-slate-700 transition font-bold">Cancel</button>
+        <button id="btn-save-settings"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition font-black shadow-lg">Save
+          & Connect</button>
+      </div>
     </div>
-</div>
+  </div>
 
-<script>
+  <script>
     lucide.createIcons();
 
-    const state = {
-        url: localStorage.getItem('ns-url') || '',
-        secret: localStorage.getItem('ns-secret') || '',
-        data: { entries: [], treatments: [], profile: null, devicestatus: [] },
-        timeRangeHours: 6,
-        offsetDays: 0,
-        lastFetchAt: null,
+    class ClinicalA1cCalculator {
+      constructor(config = {}) {
+        this.lowThreshold = config.lowThreshold || 70;
+        this.highThreshold = config.highThreshold || 180;
+        this.veryHighThreshold = config.veryHighThreshold || 250;
+        this.penaltyHigh = config.penaltyHigh || 0.006;
+        this.penaltyVeryHigh = config.penaltyVeryHigh || 0.012;
+      }
+      _extractValues(rawData) {
+        if (!Array.isArray(rawData)) return [];
+        return rawData
+          .map(item => Number(item.sgv ?? item.glucose ?? item.value ?? 0))
+          .filter(v => Number.isFinite(v) && v > 0);
+      }
+      analyze(glucoseData) {
+        const values = this._extractValues(glucoseData);
+        if (values.length === 0) return { adjustedGmi: 0, gmi: 0 };
+        const total = values.length;
+        const mean = values.reduce((acc, val) => acc + val, 0) / total;
+        const tar = values.filter(v => v > this.highThreshold).length / total * 100;
+        const vTar = values.filter(v => v > this.veryHighThreshold).length / total * 100;
+        const gmi = 3.31 + 0.02392 * mean;
+        const nonLowValues = values.filter(v => v >= this.lowThreshold);
+        const nonLowMean = nonLowValues.length ? nonLowValues.reduce((a, b) => a + b, 0) / nonLowValues.length : mean;
+        const base = 3.31 + 0.02392 * nonLowMean;
+        const adjustedGmi = base + tar * this.penaltyHigh + vTar * this.penaltyVeryHigh;
+        return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
+      }
+    }
+
+    const a1cCalculator = new ClinicalA1cCalculator();
+
+    const CONFIG = {
+      FULL_LOOKBACK_DAYS: 8,
+      DELTA_LOOKBACK_MINUTES: 20,
+      DEVICESTATUS_LOOKBACK_HOURS_FULL: 24,
+      DEVICESTATUS_LOOKBACK_HOURS_DELTA: 3,
+      REFRESH_INTERVAL_MS: 3 * 60 * 1000,
+      AGP_REFRESH_INTERVAL_MS: 15 * 60 * 1000,
+      DATA_RETENTION_DAYS: 8,
+      CHART_POINT_RADIUS: 6
     };
 
-    const FULL_LOOKBACK_DAYS = 8;
-    const DELTA_LOOKBACK_MINUTES = 90;
-    const REFRESH_INTERVAL_MS = 3 * 60 * 1000;
-    const DATA_RETENTION_DAYS = 8;
+    const state = {
+      url: localStorage.getItem('ns-url') || '',
+      secret: localStorage.getItem('ns-secret') || '',
+      data: { entries: [], treatments: [], profile: null, devicestatus: [] },
+      timeRangeHours: 6,
+      offsetDays: 0,
+      lastFetchAt: null,
+      lastAgpDrawAt: 0,
+      lastSummaryCalcAt: 0,
+      lastMainChartSignature: '',
+      loadedDeviceStatusDays: new Set(),
+      lastHistoryInteractionAt: 0
+    };
 
     let chartInstance = null;
     let agpChartInstance = null;
     let agpProfileChartInstance = null;
     let fetchInterval = null;
-    let tooltipEl = null;
     let agpMode = false;
-
-    // Toggle Summary View
-    function toggleSummary() {
-        agpMode = !agpMode;
-        const defEl = document.getElementById('summary-default');
-        const agpEl = document.getElementById('summary-agp');
-        
-        if(agpMode) {
-            defEl.classList.add('invisible');
-            agpEl.classList.remove('hidden');
-            agpEl.classList.add('flex');
-            drawAGPCharts();
-        } else {
-            agpEl.classList.add('hidden');
-            agpEl.classList.remove('flex');
-            defEl.classList.remove('invisible');
-        }
-    }
-
-    function initTooltip() {
-        if (!document.getElementById('custom-tooltip')) {
-            tooltipEl = document.createElement('div');
-            tooltipEl.id = 'custom-tooltip';
-            tooltipEl.className = 'hidden';
-            document.body.appendChild(tooltipEl);
-        } else {
-            tooltipEl = document.getElementById('custom-tooltip');
-        }
-    }
-    initTooltip();
-
     let currentLayoutPattern = 0;
-    setInterval(() => {
-        const container = document.getElementById('grid-container');
-        container.classList.remove(`layout-pattern-${currentLayoutPattern}`);
-        currentLayoutPattern = (currentLayoutPattern + 1) % 2; 
-        container.classList.add(`layout-pattern-${currentLayoutPattern}`);
-        if(chartInstance) chartInstance.resize();
-        if(agpMode && agpChartInstance) { agpChartInstance.resize(); agpProfileChartInstance.resize(); }
-    }, 10 * 60 * 1000);
+    let idleMinutes = 0;
 
-    setInterval(() => {
-        const shiftX = Math.floor(Math.random() * 5) - 2;
-        const shiftY = Math.floor(Math.random() * 5) - 2;
-        document.getElementById('shift-container').style.transform = `translate(${shiftX}px, ${shiftY}px)`;
-    }, 60 * 1000);
+    const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
 
-    let idleTimer = 0;
-    const resetIdle = () => { idleTimer = 0; document.body.style.filter = 'brightness(100%) saturate(100%)'; };
-    ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle));
-    setInterval(() => {
-        idleTimer++;
-        if (idleTimer >= 3) document.body.style.filter = 'brightness(75%) saturate(80%)';
-    }, 60 * 1000);
+    function toTimeMs(obj, field = 'dateString') {
+      const raw = obj?.[field] ?? obj?.dateString ?? obj?.created_at ?? obj?.date;
+      if (typeof raw === 'number') return raw;
+      const ms = new Date(raw).getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    }
 
-    document.getElementById('btn-fullscreen').addEventListener('click', () => {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(err => console.log(err));
-        else if (document.exitFullscreen) document.exitFullscreen();
-    });
+    function dateKeyFromDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
 
-    document.getElementById('btn-settings').addEventListener('click', () => {
+    function getDayRangeByOffset(offsetDays) {
+      const base = new Date();
+      base.setDate(base.getDate() - offsetDays);
+
+      const start = new Date(base);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+
+      return {
+        start,
+        end,
+        key: dateKeyFromDate(start)
+      };
+    }
+
+    async function fetchDeviceStatusForDay(offsetDays) {
+      if (!state.url) return;
+
+      const { start, end, key } = getDayRangeByOffset(offsetDays);
+
+      if (state.loadedDeviceStatusDays.has(key)) {
+        return;
+      }
+
+      safeSetText('last-update-time', `Loading ${key}`);
+
+      const deviceData = await fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
+        'find[created_at][$gte]': start.toISOString(),
+        'find[created_at][$lt]': end.toISOString(),
+        count: 3000
+      }));
+
+      if (Array.isArray(deviceData)) {
+        state.data.devicestatus = mergeByKey(
+          state.data.devicestatus,
+          deviceData,
+          d => d._id || d.created_at
+        ).sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+
+        state.loadedDeviceStatusDays.add(key);
+        hideError();
+      } else {
+        showError(`Failed to load IOB for ${key}`);
+      }
+    }
+
+    function showError(msg) {
+      const errDiv = document.getElementById('error-message');
+      if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); }
+    }
+
+    function hideError() {
+      const errDiv = document.getElementById('error-message');
+      if (errDiv) errDiv.classList.add('hidden');
+    }
+
+    function mergeByKey(existing, incoming, keyFn) {
+      const map = new Map();
+      existing.forEach(item => map.set(keyFn(item), item));
+      incoming.forEach(item => map.set(keyFn(item), item));
+      return Array.from(map.values());
+    }
+
+    function pruneOldData() {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - CONFIG.DATA_RETENTION_DAYS);
+      const cutoffMs = cutoff.getTime();
+      state.data.entries = state.data.entries.filter(e => toTimeMs(e) >= cutoffMs);
+      state.data.treatments = state.data.treatments.filter(t => toTimeMs(t, 'created_at') >= cutoffMs);
+      state.data.devicestatus = state.data.devicestatus.filter(d => toTimeMs(d, 'created_at') >= cutoffMs);
+    }
+
+    function buildEndpoint(path, params = {}) {
+      const usp = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') usp.append(k, v);
+      });
+      const qs = usp.toString();
+      return qs ? `${path}?${qs}` : path;
+    }
+
+    async function fetchAPI(endpoint) {
+      if (!state.url) return null;
+      const headers = { Accept: 'application/json' };
+      if (state.secret) headers['API-SECRET'] = state.secret;
+      try {
+        const response = await fetch(`${state.url}${endpoint}`, { headers, cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        console.error('Fetch Error:', error);
+        showError('Connection failed.');
+        return null;
+      }
+    }
+
+    async function fetchAllData(forceFull = false) {
+      if (!state.url || document.hidden) return;
+
+      const now = new Date();
+      const shouldFullFetch = forceFull || !state.data.entries.length || !state.lastFetchAt;
+
+      const entryFrom = new Date(now);
+      if (shouldFullFetch) entryFrom.setDate(entryFrom.getDate() - CONFIG.FULL_LOOKBACK_DAYS);
+      else entryFrom.setMinutes(entryFrom.getMinutes() - CONFIG.DELTA_LOOKBACK_MINUTES);
+
+      const dsFrom = new Date(now);
+      if (shouldFullFetch) dsFrom.setHours(dsFrom.getHours() - CONFIG.DEVICESTATUS_LOOKBACK_HOURS_FULL);
+      else dsFrom.setHours(dsFrom.getHours() - CONFIG.DEVICESTATUS_LOOKBACK_HOURS_DELTA);
+
+      safeSetText('last-update-time', 'Updating...');
+
+      try {
+        if (!state.data.profile || shouldFullFetch) {
+          const profiles = await fetchAPI('/api/v1/profile.json');
+          if (Array.isArray(profiles) && profiles.length > 0) {
+            const defaultName = profiles[0].defaultProfile;
+            state.data.profile = profiles[0].store?.[defaultName] || null;
+          }
+        }
+
+        const [entriesData, treatsData, deviceData] = await Promise.all([
+          fetchAPI(buildEndpoint('/api/v1/entries.json', {
+            'find[dateString][$gte]': entryFrom.toISOString(),
+            count: 10000
+          })),
+          fetchAPI(buildEndpoint('/api/v1/treatments.json', {
+            'find[created_at][$gte]': entryFrom.toISOString(),
+            count: 10000
+          })),
+          fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
+            'find[created_at][$gte]': dsFrom.toISOString(),
+            count: shouldFullFetch ? 1000 : 300
+          }))
+        ]);
+
+        if (Array.isArray(entriesData)) {
+          state.data.entries = mergeByKey(state.data.entries, entriesData, e => e._id || e.date || e.dateString)
+            .sort((a, b) => toTimeMs(a) - toTimeMs(b));
+        }
+        if (Array.isArray(treatsData)) {
+          state.data.treatments = mergeByKey(state.data.treatments, treatsData, t => t._id || `${t.created_at}-${t.eventType || ''}-${t.insulin || ''}-${t.carbs || ''}`)
+            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+        }
+        if (Array.isArray(deviceData)) {
+          state.data.devicestatus = mergeByKey(state.data.devicestatus, deviceData, d => d._id || d.created_at)
+            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+        }
+
+        pruneOldData();
+        state.lastFetchAt = now;
+        hideError();
+        updateUI({ dataFetched: true });
+        safeSetText('sync-time', `Sync: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
+      } catch (error) {
+        console.error(error);
+        showError('Data update failed.');
+      }
+    }
+
+    const getDirectionArrow = (dir) => ({
+      NONE: '⇼', DoubleUp: '⇈', SingleUp: '↑', FortyFiveUp: '↗', Flat: '→', FortyFiveDown: '↘', SingleDown: '↓', DoubleDown: '⇊'
+    }[dir] || '');
+
+    function getBgColorClass(sgv) {
+      if (sgv < 55) return 'text-red-500';
+      if (sgv < 70) return 'text-red-400';
+      if (sgv > 250) return 'text-yellow-500';
+      if (sgv > 180) return 'text-yellow-400';
+      return 'text-green-400';
+    }
+
+    function setDynamicColor(el, className) {
+      if (!el) return;
+      el.classList.remove('text-red-500', 'text-red-400', 'text-yellow-500', 'text-yellow-400', 'text-green-400');
+      el.classList.add(className);
+    }
+
+    function getIobFromDeviceStatus(ds) {
+      if (!ds) return undefined;
+      const candidates = [
+        ds.loop?.iob?.iob,
+        ds.pump?.iob?.iob,
+        typeof ds.pump?.iob === 'number' ? ds.pump.iob : undefined,
+        ds.openaps?.iob?.iob,
+        typeof ds.iob === 'number' ? ds.iob : undefined
+      ];
+      return candidates.find(v => Number.isFinite(Number(v)));
+    }
+
+    function getCobFromDeviceStatus(ds) {
+      if (!ds) return undefined;
+      const candidates = [
+        ds.loop?.cob?.cob,
+        ds.pump?.cob?.cob,
+        typeof ds.pump?.cob === 'number' ? ds.pump.cob : undefined,
+        typeof ds.cob === 'number' ? ds.cob : undefined
+      ];
+      return candidates.find(v => Number.isFinite(Number(v)));
+    }
+
+    function updateUI({ dataFetched = false } = {}) {
+      const entries = state.data.entries;
+      if (!entries.length) return;
+
+      const latest = entries[entries.length - 1];
+      const latestBg = Number(latest.sgv ?? latest.glucose ?? latest.value);
+      const colorClass = getBgColorClass(latestBg);
+
+      const currentBgEl = document.getElementById('current-bg');
+      currentBgEl.textContent = Number.isFinite(latestBg) ? latestBg : '---';
+      setDynamicColor(currentBgEl, colorClass);
+
+      const arrowEl = document.getElementById('trend-arrow');
+      arrowEl.textContent = getDirectionArrow(latest.direction);
+      setDynamicColor(arrowEl, colorClass);
+
+      if (entries.length > 1) {
+        const prev = entries[entries.length - 2];
+        const prevBg = Number(prev.sgv ?? prev.glucose ?? prev.value);
+        const delta = latestBg - prevBg;
+        safeSetText('bg-delta', Number.isFinite(delta) ? `${delta >= 0 ? '+' : ''}${delta} mg/dL` : '--');
+      }
+
+      const latestMs = toTimeMs(latest);
+      const timeDiff = latestMs ? Math.floor((Date.now() - latestMs) / 60000) : null;
+      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : `${timeDiff} min ago`);
+
+      const dsList = state.data.devicestatus;
+      const ds = dsList.length ? dsList[dsList.length - 1] : null;
+      const iobVal = getIobFromDeviceStatus(ds);
+      const cobVal = getCobFromDeviceStatus(ds);
+      safeSetText('current-iob', Number.isFinite(Number(iobVal)) ? Number(iobVal).toFixed(1) : '--');
+      safeSetText('current-cob', Number.isFinite(Number(cobVal)) ? Number(cobVal).toFixed(0) : '--');
+
+      let res = '--';
+      const resVal = ds?.pump?.reservoir ?? ds?.loop?.pump?.reservoir;
+      if (Number.isFinite(Number(resVal))) res = `${Math.round(Number(resVal))}U`;
+      safeSetText('current-res', res);
+
+      const siteChanges = state.data.treatments.filter(t => t.eventType === 'Site Change');
+      if (siteChanges.length) {
+        const lastChange = toTimeMs(siteChanges[siteChanges.length - 1], 'created_at');
+        const hoursSince = (Date.now() - lastChange) / 36e5;
+        safeSetText('current-cage', hoursSince < 24 ? `${hoursSince.toFixed(1)}h` : `${(hoursSince / 24).toFixed(1)}d`);
+      } else {
+        safeSetText('current-cage', '--');
+      }
+
+      calculateSummaries();
+      updateChart({ force: dataFetched });
+
+      const now = Date.now();
+      if (agpMode && (dataFetched || now - state.lastAgpDrawAt > CONFIG.AGP_REFRESH_INTERVAL_MS)) {
+        drawAGPCharts({ force: false });
+      }
+    }
+
+    function calculateSummaries() {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
+      const sevenDaysAgo = new Date(todayStart); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      renderStats('td', calcStatsForPeriod(todayStart, todayEnd), 1);
+      renderStats('7d', calcStatsForPeriod(sevenDaysAgo, todayEnd), 7);
+    }
+
+    function calcStatsForPeriod(startDate, endDate) {
+      const start = startDate.getTime();
+      const end = endDate.getTime();
+
+      const periodEntries = state.data.entries.filter(e => {
+        const t = toTimeMs(e);
+        return t >= start && t < end;
+      });
+
+      const periodTreats = state.data.treatments.filter(t => {
+        const ms = toTimeMs(t, 'created_at');
+        return ms >= start && ms < end;
+      });
+
+      let tbr = 0, tir = 0, tar = 0, mean = 0, cv = 0;
+      let tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
+
+      const values = periodEntries
+        .map(e => Number(e.sgv ?? e.glucose ?? e.value))
+        .filter(Number.isFinite);
+
+      const total = values.length;
+
+      if (total) {
+        tbr54 = values.filter(v => v < 54).length / total * 100;
+        tbr70 = values.filter(v => v >= 54 && v < 70).length / total * 100;
+        tbr = tbr54 + tbr70;
+
+        tir = values.filter(v => v >= 70 && v <= 180).length / total * 100;
+        tar = values.filter(v => v > 180).length / total * 100;
+        tar250 = values.filter(v => v > 250).length / total * 100;
+
+        tirScore = tir - 5 * tbr54 - 2 * tbr70 - 1 * tar250;
+        tirScore = Math.max(0, Math.min(100, tirScore));
+
+        mean = values.reduce((a, b) => a + b, 0) / total;
+        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
+        cv = mean > 0 ? sd / mean * 100 : 0;
+      }
+
+      let totalCarbs = 0, bolus = 0, smb = 0;
+
+      periodTreats.forEach(t => {
+        const carbs = Number(t.carbs || 0);
+        if (Number.isFinite(carbs) && carbs > 0) totalCarbs += carbs;
+
+        const insulin = Number(t.insulin || 0);
+        if (!Number.isFinite(insulin) || insulin <= 0) return;
+
+        const type = (t.eventType || '').toLowerCase();
+        if (type.includes('temp basal') || type.includes('profile')) return;
+
+        const isSMB =
+          type.includes('smb') ||
+          t.isSMB === true ||
+          t.enteredBy?.toLowerCase?.().includes('smb');
+
+        if (isSMB) smb += insulin;
+        else bolus += insulin;
+      });
+
+      const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
+      const tdd = basal + bolus + smb;
+      const activeInsulin = bolus + smb;
+      const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
+      const crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
+      const a1cResult = a1cCalculator.analyze(periodEntries);
+
+      return {
+        tbr,
+        tir,
+        tar,
+        tbr54,
+        tbr70,
+        tar250,
+        tirScore,
+        carbs: totalCarbs,
+        bolus,
+        smb,
+        basal,
+        tdd,
+        mean,
+        cv,
+        crBolus,
+        crTotal,
+        gmi: a1cResult.gmi,
+        adjustedGmi: a1cResult.adjustedGmi
+      };
+    }
+
+    function getProfileBasalRate(date) {
+      const basal = state.data.profile?.basal;
+      if (!Array.isArray(basal) || !basal.length) return 0;
+      const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+      let rate = Number(basal[0].value || 0);
+      for (let i = basal.length - 1; i >= 0; i--) {
+        if (secondsSinceMidnight >= Number(basal[i].timeAsSeconds || 0)) {
+          rate = Number(basal[i].value || 0);
+          break;
+        }
+      }
+      return rate;
+    }
+
+    function getTempBasalAbsolute(t) {
+      if (Number.isFinite(Number(t.absolute))) return Number(t.absolute);
+      if (Number.isFinite(Number(t.rate))) return Number(t.rate);
+      return null;
+    }
+
+    function calculateIntegralBasal(startDate, endDate, periodTreats) {
+      if (!state.data.profile?.basal) return 0;
+      let total = 0;
+      const tempBasals = periodTreats.filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null);
+      let current = new Date(startDate);
+      const end = new Date(Math.min(endDate.getTime(), Date.now()));
+
+      while (current < end) {
+        const timeMs = current.getTime();
+        let rate = getProfileBasalRate(current);
+        for (const tb of tempBasals) {
+          const tbStart = toTimeMs(tb, 'created_at');
+          const tbEnd = tbStart + Number(tb.duration) * 60000;
+          if (timeMs >= tbStart && timeMs < tbEnd) {
+            rate = getTempBasalAbsolute(tb);
+            break;
+          }
+        }
+        total += rate / 60;
+        current.setMinutes(current.getMinutes() + 1);
+      }
+      return total;
+    }
+
+    function renderStats(prefix, stats, days) {
+      safeSetStyle(`${prefix}-tbr`, 'height', `${Math.min(100, Math.max(0, stats.tbr))}%`);
+      safeSetStyle(`${prefix}-tir`, 'height', `${Math.min(100, Math.max(0, stats.tir))}%`);
+      safeSetStyle(`${prefix}-tar`, 'height', `${Math.min(100, Math.max(0, stats.tar))}%`);
+      safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
+      safeSetText(`${prefix}-tir-score`, Math.round(stats.tirScore));
+
+      const tdd = stats.tdd / days;
+      const basal = stats.basal / days;
+      const bolus = stats.bolus / days;
+      const smb = stats.smb / days;
+
+      safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
+      safeSetText(`${prefix}-basal`, basal.toFixed(1));
+      safeSetText(`${prefix}-smb`, smb.toFixed(1));
+      safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
+      safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
+      safeSetText(`${prefix}-mean`, stats.mean > 0 ? Math.round(stats.mean) : 0);
+      safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
+      safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
+      safeSetText(`${prefix}-gmi`, stats.gmi.toFixed(1));
+      safeSetText(`${prefix}-ea1c`, stats.adjustedGmi.toFixed(1));
+
+      if (tdd > 0) {
+        safeSetStyle(`${prefix}-basal-bar`, 'width', `${basal / tdd * 100}%`);
+        safeSetStyle(`${prefix}-smb-bar`, 'width', `${smb / tdd * 100}%`);
+        safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
+      } else {
+        safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-smb-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
+      }
+
+      safeSetText(`${prefix}-cv-agp`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+    }
+
+    function makeTargetAnnotation(alpha = 0.08) {
+      return {
+        type: 'box', yMin: 70, yMax: 180,
+        backgroundColor: `rgba(74, 222, 128, ${alpha})`,
+        borderColor: 'rgba(74, 222, 128, 0.35)',
+        borderWidth: 1,
+        borderDash: [5, 5],
+        drawTime: 'beforeDraw'
+      };
+    }
+
+    function getMainChartPayload() {
+      const targetDay = new Date();
+      targetDay.setDate(targetDay.getDate() - state.offsetDays);
+      const midnightStart = new Date(targetDay);
+      midnightStart.setHours(0, 0, 0, 0);
+      const midnightEnd = new Date(targetDay);
+      midnightEnd.setHours(23, 59, 59, 999);
+
+      let targetStart;
+      let initialDisplayMax;
+
+      if (state.offsetDays === 0) {
+        const targetEnd = new Date();
+        targetStart = new Date(targetEnd);
+        targetStart.setHours(targetStart.getHours() - state.timeRangeHours);
+        initialDisplayMax = targetEnd.getTime() + 2 * 60 * 60 * 1000;
+      } else {
+        targetStart = new Date(midnightStart);
+        initialDisplayMax = Math.min(
+          midnightStart.getTime() + state.timeRangeHours * 60 * 60 * 1000,
+          midnightEnd.getTime()
+        );
+      }
+
+      const panMaxEnd = new Date(midnightEnd.getTime() + 2 * 60 * 60 * 1000);
+
+      const plotEntries = state.data.entries.filter(e => { const d = toTimeMs(e); return d >= midnightStart.getTime() && d <= panMaxEnd.getTime(); });
+      const plotTreats = state.data.treatments.filter(t => { const d = toTimeMs(t, 'created_at'); return d >= midnightStart.getTime() && d <= panMaxEnd.getTime(); });
+      const plotDeviceStatus = state.data.devicestatus.filter(d => { const dt = toTimeMs(d, 'created_at'); return dt >= midnightStart.getTime() && dt <= panMaxEnd.getTime(); });
+
+      const scatterData = plotEntries.map(e => ({ x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) })).filter(d => Number.isFinite(d.y));
+      const yAxisMax = Math.max(250, ...scatterData.map(d => d.y)) + 30;
+      const yAxisMin = 40;
+
+      const annotations = { targetRange: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(74, 222, 128, 0.08)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' } };
+      plotTreats.forEach((t, i) => {
+        const time = toTimeMs(t, 'created_at');
+        const carbs = Number(t.carbs || 0);
+        const insulin = Number(t.insulin || 0);
+        if (carbs > 0) {
+          const p = Math.max(3, Math.sqrt(carbs) * 1.5);
+          annotations[`carb_${i}`] = { type: 'label', xValue: time, yValue: yAxisMax - 25, backgroundColor: 'rgba(234,179,8,0.7)', color: '#fff', content: `${carbs}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 } };
+        }
+        if (insulin > 0) {
+          const type = (t.eventType || '').toLowerCase();
+          if (type.includes('temp basal') || type.includes('profile')) return;
+          const isSMB = type.includes('smb') || t.isSMB === true || t.enteredBy?.toLowerCase?.().includes('smb');
+          const color = isSMB ? 'rgba(168,85,247,0.7)' : 'rgba(6,182,212,0.7)';
+          const p = Math.max(3, Math.sqrt(insulin) * 3);
+          annotations[`ins_${i}`] = { type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff', content: `${insulin}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 } };
+        }
+      });
+
+      const basalData = [];
+      const profileBasalData = [];
+      let maxBasalVal = 1;
+      if (state.data.profile?.basal) {
+        const iter = new Date(midnightStart); iter.setMinutes(0, 0, 0);
+        while (iter <= panMaxEnd) {
+          const tMs = iter.getTime();
+          const profRate = getProfileBasalRate(iter);
+          let actualRate = profRate;
+          const tempBasal = plotTreats.find(t => {
+            if (t.eventType !== 'Temp Basal' || Number(t.duration) <= 0 || getTempBasalAbsolute(t) === null) return false;
+            const ts = toTimeMs(t, 'created_at');
+            const te = ts + Number(t.duration) * 60000;
+            return tMs >= ts && tMs < te;
+          });
+          if (tempBasal) actualRate = getTempBasalAbsolute(tempBasal);
+          profileBasalData.push({ x: tMs, y: profRate });
+          basalData.push({ x: tMs, y: actualRate });
+          maxBasalVal = Math.max(maxBasalVal, profRate, actualRate);
+          iter.setMinutes(iter.getMinutes() + 5);
+        }
+      }
+
+      const iobData = [];
+      let maxIobVal = 1;
+      plotDeviceStatus.forEach(ds => {
+        const iobVal = Number(getIobFromDeviceStatus(ds));
+        if (Number.isFinite(iobVal)) {
+          iobData.push({ x: toTimeMs(ds, 'created_at'), y: iobVal });
+          maxIobVal = Math.max(maxIobVal, iobVal);
+        }
+      });
+
+      const predictionData = [];
+      const dsLatest = state.data.devicestatus.length ? state.data.devicestatus[state.data.devicestatus.length - 1] : null;
+      if (state.offsetDays === 0 && dsLatest) {
+        if (Array.isArray(dsLatest.loop?.predicted?.values) && dsLatest.loop?.predicted?.startDate) {
+          let pTime = new Date(dsLatest.loop.predicted.startDate).getTime();
+          dsLatest.loop.predicted.values.forEach(bg => { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
+        } else if (dsLatest.openaps?.suggested?.predBGs) {
+          const pBGs = dsLatest.openaps.suggested.predBGs.aA || dsLatest.openaps.suggested.predBGs.UAM || dsLatest.openaps.suggested.predBGs.IOB;
+          if (Array.isArray(pBGs)) {
+            let pTime = toTimeMs(dsLatest, 'created_at');
+            pBGs.forEach(bg => { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
+          }
+        }
+      }
+
+      return { targetStart, initialDisplayMax, midnightStart, panMaxEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
+    }
+
+    function getOrCreateTooltip(chart) {
+      let tooltipEl = chart.canvas.parentNode.querySelector('div.chart-tooltip');
+      if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.className = 'chart-tooltip';
+        chart.canvas.parentNode.appendChild(tooltipEl);
+      }
+      return tooltipEl;
+    }
+
+    function makeExternalTooltip(plotTreats) {
+      return (context) => {
+        const { chart, tooltip } = context;
+        const tooltipEl = getOrCreateTooltip(chart);
+        if (tooltip.opacity === 0) { tooltipEl.style.opacity = 0; return; }
+        if (tooltip.dataPoints?.length) {
+          const hoverTime = tooltip.dataPoints[0].parsed.x;
+          const d = new Date(hoverTime);
+          const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          let html = `<div style="font-size:12px;color:#cbd5e1;font-weight:bold;margin-bottom:4px;border-bottom:1px solid rgba(71,85,105,0.5);padding-bottom:4px;">${timeStr}</div>`;
+          const bgValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'BG')?.raw.y;
+          if (bgValue !== undefined) html += `<div style="font-size:16px;font-weight:900;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">BG:</span> ${bgValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
+          const predValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Predicted')?.raw.y;
+          if (predValue !== undefined && bgValue === undefined) html += `<div style="font-size:15px;font-weight:bold;color:#c084fc;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">Pred:</span> ${predValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
+          const basalValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Basal')?.raw.y;
+          if (basalValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ${basalValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U/h</span></div>`;
+          const iobValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'IOB')?.raw.y;
+          if (iobValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ${iobValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U</span></div>`;
+          const treats = plotTreats.filter(t => Math.abs(toTimeMs(t, 'created_at') - hoverTime) < 3 * 60000);
+          if (treats.length) {
+            html += `<div style="margin-top:4px;padding-top:4px;border-top:1px dashed rgba(71,85,105,0.5);">`;
+            treats.forEach(t => {
+              if (Number(t.carbs) > 0) html += `<div style="font-size:14px;color:#facc15;font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">Carbs:</span> ${t.carbs}g</div>`;
+              if (Number(t.insulin) > 0 && !(t.eventType || '').toLowerCase().includes('temp')) {
+                const isSMB = (t.eventType || '').toLowerCase().includes('smb') || t.isSMB === true || t.enteredBy?.toLowerCase?.().includes('smb');
+                html += `<div style="font-size:14px;color:${isSMB ? '#d8b4fe' : '#67e8f9'};font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">${isSMB ? 'SMB' : 'Bolus'}:</span> ${t.insulin}U</div>`;
+              }
+            });
+            html += `</div>`;
+          }
+          tooltipEl.innerHTML = html;
+        }
+        tooltipEl.style.opacity = 1;
+        const tooltipWidth = tooltipEl.offsetWidth;
+        const tooltipHeight = tooltipEl.offsetHeight;
+        let left = tooltip.caretX - tooltipWidth / 2;
+        let top = tooltip.caretY - tooltipHeight - 15;
+        if (top < 5) top = tooltip.caretY + 15;
+        if (top + tooltipHeight > chart.height - 5) top = chart.height - tooltipHeight - 5;
+        if (left < 5) left = 5;
+        else if (left + tooltipWidth > chart.width - 5) left = chart.width - tooltipWidth - 5;
+        tooltipEl.style.left = `${left}px`;
+        tooltipEl.style.top = `${top}px`;
+      };
+    }
+
+    function updateChart({ force = false } = {}) {
+      if (!state.data.entries.length) return;
+      const ctxEl = document.getElementById('bgChart');
+      if (!ctxEl) return;
+
+      const payload = getMainChartPayload();
+      const signature = [state.offsetDays, state.timeRangeHours, state.data.entries.length, state.data.treatments.length, state.data.devicestatus.length].join('|');
+      if (!force && chartInstance && signature === state.lastMainChartSignature) return;
+      state.lastMainChartSignature = signature;
+
+      Chart.defaults.color = '#64748b';
+      Chart.defaults.font.family = 'Inter, sans-serif';
+
+      const yBasalMax = Math.max(payload.maxBasalVal * 6, 3);
+      const yIobMax = Math.max(payload.maxIobVal * 4, 4);
+
+      if (!chartInstance) {
+        chartInstance = new Chart(ctxEl.getContext('2d'), {
+          type: 'scatter',
+          data: { datasets: [] },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            parsing: false,
+            normalized: true,
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: false, external: makeExternalTooltip(payload.plotTreats) },
+              annotation: { annotations: payload.annotations },
+              zoom: { pan: { enabled: true, mode: 'x' }, limits: { x: { min: payload.midnightStart.getTime(), max: payload.panMaxEnd.getTime() } } }
+            },
+            layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
+            scales: {
+              x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, min: payload.targetStart.getTime(), max: payload.initialDisplayMax, grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { font: { size: 11 } } },
+              y: { position: 'left', min: payload.yAxisMin, max: payload.yAxisMax, afterBuildTicks: addTargetTicks, ticks: targetTickStyle(), grid: { color: 'rgba(51,65,85,0.3)' } },
+              yBasal: { position: 'right', min: 0, max: yBasalMax, reverse: true, grid: { display: false }, border: { display: false }, ticks: { display: false } },
+              yIob: { position: 'right', min: 0, max: yIobMax, reverse: false, grid: { display: false }, border: { display: false }, ticks: { display: false } }
+            }
+          }
+        });
+      }
+
+      chartInstance.data.datasets = [
+        { label: 'BG', data: payload.scatterData, backgroundColor: ctx => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; }, pointRadius: CONFIG.CHART_POINT_RADIUS, order: 5, yAxisID: 'y' },
+        { type: 'line', label: 'Predicted', data: payload.predictionData, borderColor: 'rgba(192,132,252,0.9)', borderDash: [5, 5], borderWidth: 2.5, fill: false, pointRadius: 0, order: 4, yAxisID: 'y', tension: 0.4 },
+        { type: 'line', label: 'Profile', data: payload.profileBasalData, borderColor: 'rgba(59,130,246,0.4)', borderDash: [3, 3], borderWidth: 1.5, fill: false, stepped: true, pointRadius: 0, order: 3, yAxisID: 'yBasal' },
+        { type: 'line', label: 'Basal', data: payload.basalData, borderColor: 'rgba(59,130,246,0.8)', backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, fill: true, stepped: true, pointRadius: 0, order: 2, yAxisID: 'yBasal' },
+        { type: 'line', label: 'IOB', data: payload.iobData, borderColor: 'rgba(56,189,248,0.8)', backgroundColor: 'rgba(56,189,248,0.2)', borderWidth: 1.5, fill: true, pointRadius: 0, order: 1, yAxisID: 'yIob', tension: 0.4 }
+      ];
+
+      chartInstance.options.plugins.tooltip.external = makeExternalTooltip(payload.plotTreats);
+      chartInstance.options.plugins.annotation.annotations = payload.annotations;
+      chartInstance.options.plugins.zoom.limits.x.min = payload.midnightStart.getTime();
+      chartInstance.options.plugins.zoom.limits.x.max = payload.panMaxEnd.getTime();
+      chartInstance.options.scales.x.min = payload.targetStart.getTime();
+      chartInstance.options.scales.x.max = payload.initialDisplayMax;
+      chartInstance.options.scales.y.max = payload.yAxisMax;
+      chartInstance.options.scales.yBasal.max = yBasalMax;
+      chartInstance.options.scales.yBasal.ticks.callback = v => v <= payload.maxBasalVal ? v : '';
+      chartInstance.options.scales.yIob.max = yIobMax;
+      chartInstance.options.scales.yIob.ticks.callback = v => v <= payload.maxIobVal ? v : '';
+      chartInstance.update('none');
+    }
+
+    function addTargetTicks(axis) {
+      if (!axis.ticks.find(t => t.value === 70)) axis.ticks.push({ value: 70 });
+      if (!axis.ticks.find(t => t.value === 180)) axis.ticks.push({ value: 180 });
+      axis.ticks.sort((a, b) => a.value - b.value);
+    }
+
+    function targetTickStyle() {
+      return {
+        font: ctx => (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? { size: 12, weight: '900' } : { size: 11 },
+        color: ctx => (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? '#4ade80' : '#64748b'
+      };
+    }
+
+    function buildAgpData() {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const targetEntries = state.data.entries.filter(e => toTimeMs(e) >= sevenDaysAgo.getTime());
+      const slots = Array.from({ length: 48 }, () => []);
+      targetEntries.forEach(e => {
+        const d = new Date(toTimeMs(e));
+        const slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
+        const value = Number(e.sgv ?? e.glucose ?? e.value);
+        if (slot >= 0 && slot < 48 && Number.isFinite(value)) slots[slot].push(value);
+      });
+
+      const p = { p10: [], p25: [], p50: [], p75: [], p90: [], times: [] };
+      for (let i = 0; i <= 48; i++) {
+        const idx = i === 48 ? 0 : i;
+        const data = [...slots[idx]].sort((a, b) => a - b);
+        p.times.push(i * 0.5);
+        if (!data.length) {
+          p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null);
+          continue;
+        }
+        const getP = q => {
+          const pos = (data.length - 1) * q;
+          const base = Math.floor(pos);
+          const rest = pos - base;
+          return data[base + 1] !== undefined ? data[base] + rest * (data[base + 1] - data[base]) : data[base];
+        };
+        p.p10.push(getP(0.10)); p.p25.push(getP(0.25)); p.p50.push(getP(0.50)); p.p75.push(getP(0.75)); p.p90.push(getP(0.90));
+      }
+
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayData = state.data.entries
+        .filter(e => toTimeMs(e) >= todayStart.getTime())
+        .map(e => { const d = new Date(toTimeMs(e)); return { x: d.getHours() + d.getMinutes() / 60, y: Number(e.sgv ?? e.glucose ?? e.value) }; })
+        .filter(d => Number.isFinite(d.y));
+
+      return { percentiles: p, todayData };
+    }
+
+    function baseAgpOptions() {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        spanGaps: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false },
+          annotation: {
+            annotations: {
+              target: makeTargetAnnotation(0.10)
+            }
+          }
+        },
+        layout: {
+          padding: { left: 10, right: 10, top: 5, bottom: 0 }
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            min: 0,
+            max: 24,
+            ticks: {
+              stepSize: 3,
+              callback: v => `${v}:00`,
+              font: { size: 10, weight: 'bold' }
+            },
+            grid: { color: 'rgba(71,85,105,0.4)' }
+          },
+          y: {
+            min: 40,
+            max: 300,
+            afterBuildTicks: addTargetTicks,
+            ticks: targetTickStyle(),
+            grid: { color: 'rgba(71,85,105,0.4)' }
+          }
+        }
+      };
+    }
+
+    function drawAGPCharts({ force = true } = {}) {
+      if (!state.data.entries.length) return;
+      const now = Date.now();
+      if (!force && agpChartInstance && now - state.lastAgpDrawAt < CONFIG.AGP_REFRESH_INTERVAL_MS) return;
+      state.lastAgpDrawAt = now;
+
+      Chart.defaults.color = '#94a3b8';
+      Chart.defaults.font.family = 'Inter, sans-serif';
+
+      const { percentiles, todayData } = buildAgpData();
+
+      const profEl = document.getElementById('agpProfileChart');
+      const agpEl = document.getElementById('agpChart');
+      if (!profEl || !agpEl) return;
+
+      if (!agpProfileChartInstance) {
+        agpProfileChartInstance = new Chart(profEl.getContext('2d'), { type: 'scatter', data: { datasets: [] }, options: baseAgpOptions() });
+      }
+      agpProfileChartInstance.data.datasets = [{ data: todayData, backgroundColor: ctx => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; }, pointRadius: 2.5 }];
+      agpProfileChartInstance.update('none');
+
+      if (!agpChartInstance) {
+        agpChartInstance = new Chart(agpEl.getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: baseAgpOptions() });
+      }
+      agpChartInstance.data.labels = percentiles.times;
+      agpChartInstance.data.datasets = [
+        { data: percentiles.p10, fill: false, borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p25, fill: 0, backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p75, fill: 1, backgroundColor: 'rgba(74,222,128,0.5)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p90, fill: 2, backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p50, fill: false, borderColor: 'rgba(74,222,128,1)', borderWidth: 2.5, pointRadius: 0, tension: 0.3 }
+      ];
+      agpChartInstance.update('none');
+    }
+
+    function toggleSummary() {
+      agpMode = !agpMode;
+      const defEl = document.getElementById('summary-default');
+      const agpEl = document.getElementById('summary-agp');
+      if (agpMode) {
+        defEl.classList.add('invisible');
+        agpEl.classList.remove('hidden');
+        agpEl.classList.add('flex');
+        drawAGPCharts({ force: true });
+      } else {
+        agpEl.classList.add('hidden');
+        agpEl.classList.remove('flex');
+        defEl.classList.remove('invisible');
+      }
+    }
+
+    function updateDateControls() {
+      const btnNext = document.getElementById('btn-next');
+      const btnPrev = document.getElementById('btn-prev');
+      const label = document.getElementById('chart-date-label');
+      btnNext.disabled = state.offsetDays === 0;
+      btnNext.classList.toggle('opacity-50', btnNext.disabled);
+      btnNext.classList.toggle('cursor-not-allowed', btnNext.disabled);
+      btnPrev.disabled = state.offsetDays === 7;
+      btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
+      btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
+      label.textContent = state.offsetDays === 0 ? 'Today' : state.offsetDays === 1 ? 'Yesterday' : `${state.offsetDays} days ago`;
+    }
+
+    function returnToToday() {
+      state.offsetDays = 0;
+      state.lastHistoryInteractionAt = 0;
+      state.lastMainChartSignature = '';
+
+      updateDateControls();
+      updateChart({ force: true });
+
+      if (state.url) {
+        fetchAllData(false);
+      }
+    }
+
+    function initEvents() {
+      document.getElementById('summary-panel').addEventListener('click', toggleSummary);
+
+      document.getElementById('btn-fullscreen').addEventListener('click', () => {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(console.log);
+        else document.exitFullscreen?.();
+      });
+
+      document.getElementById('btn-settings').addEventListener('click', () => {
         document.getElementById('ns-url').value = state.url;
         document.getElementById('ns-secret').value = state.secret;
         document.getElementById('settings-modal').classList.remove('hidden');
-    });
-    document.getElementById('btn-cancel-settings').addEventListener('click', () => document.getElementById('settings-modal').classList.add('hidden'));
-    document.getElementById('btn-save-settings').addEventListener('click', () => {
+      });
+      document.getElementById('btn-cancel-settings').addEventListener('click', () => document.getElementById('settings-modal').classList.add('hidden'));
+      document.getElementById('btn-save-settings').addEventListener('click', () => {
         state.url = document.getElementById('ns-url').value.trim().replace(/\/$/, '');
         state.secret = document.getElementById('ns-secret').value.trim();
         localStorage.setItem('ns-url', state.url);
         localStorage.setItem('ns-secret', state.secret);
         document.getElementById('settings-modal').classList.add('hidden');
+        resetDataAndCharts();
         initApp();
-    });
+      });
 
-    document.querySelectorAll('.time-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            document.querySelectorAll('.time-btn').forEach(b => {
-                b.classList.remove('bg-slate-600', 'text-white', 'shadow');
-                b.classList.add('text-slate-400');
-            });
-            e.target.classList.add('bg-slate-600', 'text-white', 'shadow');
-            e.target.classList.remove('text-slate-400');
-            state.timeRangeHours = parseInt(e.target.dataset.hours);
-            updateChart();
+      document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          document.querySelectorAll('.time-btn').forEach(b => { b.classList.remove('bg-slate-600', 'text-white', 'shadow'); b.classList.add('text-slate-200'); });
+          e.currentTarget.classList.add('bg-slate-600', 'text-white', 'shadow');
+          e.currentTarget.classList.remove('text-slate-200');
+          state.timeRangeHours = Number(e.currentTarget.dataset.hours);
+          state.lastMainChartSignature = '';
+          updateChart({ force: true });
         });
-    });
+      });
 
-    document.getElementById('btn-prev').addEventListener('click', () => {
-        if(state.offsetDays < 7) { state.offsetDays++; updateChart(); updateDateControls(); }
-    });
-    document.getElementById('btn-next').addEventListener('click', () => {
-        if(state.offsetDays > 0) { state.offsetDays--; updateChart(); updateDateControls(); }
-    });
+      document.getElementById('btn-prev').addEventListener('click', async () => {
+        if (state.offsetDays < 7) {
+          state.offsetDays++;
+          state.lastHistoryInteractionAt = Date.now();
 
-    function updateDateControls() {
-        const btnNext = document.getElementById('btn-next');
-        const btnPrev = document.getElementById('btn-prev');
-        const label = document.getElementById('chart-date-label');
-        btnNext.disabled = state.offsetDays === 0;
-        btnNext.classList.toggle('opacity-50', btnNext.disabled);
-        btnNext.classList.toggle('cursor-not-allowed', btnNext.disabled);
-        btnPrev.disabled = state.offsetDays === 7;
-        btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
-        btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
-        if(state.offsetDays === 0) label.textContent = "Today";
-        else if (state.offsetDays === 1) label.textContent = "Yesterday";
-        else label.textContent = `${state.offsetDays} days ago`;
+          updateDateControls();
+
+          if (state.offsetDays > 0) {
+            await fetchDeviceStatusForDay(state.offsetDays);
+          }
+
+          state.lastMainChartSignature = '';
+          updateChart({ force: true });
+        }
+      });
+
+      document.getElementById('btn-next').addEventListener('click', async () => {
+        if (state.offsetDays > 0) {
+          state.offsetDays--;
+          state.lastHistoryInteractionAt = state.offsetDays > 0 ? Date.now() : 0;
+
+          updateDateControls();
+
+          if (state.offsetDays > 0) {
+            await fetchDeviceStatusForDay(state.offsetDays);
+          }
+
+          state.lastMainChartSignature = '';
+          updateChart({ force: true });
+        }
+      });
+
+      document.getElementById('btn-today').addEventListener('click', () => {
+        returnToToday();
+      });
+
+      const resetIdle = () => { idleMinutes = 0; document.body.classList.remove('dimmed'); };
+      ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }));
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && state.url && state.offsetDays === 0) fetchAllData(false);
+      });
     }
 
-    async function fetchAPI(endpoint) {
-        if(!state.url) return null;
-        let fetchUrl = `${state.url}${endpoint}`;
-        const headers = { 'Accept': 'application/json' };
-        if(state.secret) headers['API-SECRET'] = state.secret;
-        try {
-            const response = await fetch(fetchUrl, { headers });
-            if(!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
-        } catch (error) {
-            console.error("Fetch Error:", error);
-            showError("Connection failed.");
-            return null;
-        }
-    }
-
-    function showError(msg) {
-        const errDiv = document.getElementById('error-message');
-        if(errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); }
-    }
-    function hideError() { 
-        const errDiv = document.getElementById('error-message');
-        if(errDiv) errDiv.classList.add('hidden'); 
-    }
-
-    function mergeByKey(existing, incoming, keyFn) {
-        const map = new Map();
-        existing.forEach(item => map.set(keyFn(item), item));
-        incoming.forEach(item => map.set(keyFn(item), item));
-        return Array.from(map.values());
-    }
-
-    function pruneOldData() {
-        const cutoff = new Date();
-        cutoff.setDate(cutoff.getDate() - DATA_RETENTION_DAYS);
-        state.data.entries = state.data.entries.filter(e => new Date(e.dateString || e.date || 0) >= cutoff);
-        state.data.treatments = state.data.treatments.filter(t => new Date(t.created_at || 0) >= cutoff);
-    }
-
-    async function fetchAllData(forceFull = false) {
-        if(!state.url || document.hidden) return;
-
-        const fromDate = new Date();
-        const shouldFullFetch = forceFull || state.data.entries.length === 0;
-        if(shouldFullFetch) fromDate.setDate(fromDate.getDate() - FULL_LOOKBACK_DAYS);
-        else fromDate.setMinutes(fromDate.getMinutes() - DELTA_LOOKBACK_MINUTES);
-        
-        const fromStr = fromDate.toISOString();
-        const lastUpdateEl = document.getElementById('last-update-time');
-        if(lastUpdateEl) lastUpdateEl.textContent = 'Updating...';
-
-        try {
-            if(!state.data.profile || shouldFullFetch) {
-                const profiles = await fetchAPI('/api/v1/profile.json');
-                if(profiles && profiles.length > 0) {
-                    const defaultName = profiles[0].defaultProfile;
-                    state.data.profile = profiles[0].store[defaultName];
-                }
-            }
-
-            const [entriesData, treatsData, deviceData] = await Promise.all([
-                fetchAPI(`/api/v1/entries.json?find[dateString][$gte]=${encodeURIComponent(fromStr)}&count=10000`),
-                fetchAPI(`/api/v1/treatments.json?find[created_at][$gte]=${encodeURIComponent(fromStr)}&count=10000`),
-                fetchAPI(`/api/v1/devicestatus.json?count=1`)
-            ]);
-
-            if(entriesData && treatsData) {
-                state.data.entries = mergeByKey(state.data.entries, entriesData, e => e._id || e.date || e.dateString)
-                    .sort((a,b) => (a.date || new Date(a.dateString).getTime()) - (b.date || new Date(b.dateString).getTime()));
-                state.data.treatments = mergeByKey(state.data.treatments, treatsData, t => t._id || `${t.created_at}-${t.eventType||''}-${t.insulin||''}-${t.carbs||''}`)
-                    .sort((a,b) => new Date(a.created_at) - new Date(b.created_at));
-                
-                if(deviceData && deviceData.length > 0) state.data.devicestatus = deviceData[0];
-
-                pruneOldData();
-                hideError();
-                updateUI();
-
-                const now = new Date();
-                const syncEl = document.getElementById('sync-time');
-                if(syncEl) syncEl.textContent = `Sync: ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}`;
-            }
-        } catch(e) {
-            console.error(e);
-            showError("Data update failed.");
-        }
-    }
-
-    const getDirectionArrow = (dir) => {
-        const arrows = { 'NONE': '⇼', 'DoubleUp': '⇈', 'SingleUp': '↑', 'FortyFiveUp': '↗', 'Flat': '→', 'FortyFiveDown': '↘', 'SingleDown': '↓', 'DoubleDown': '⇊' };
-        return arrows[dir] || '';
-    };
-
-    const getBgColorClass = (sgv) => {
-        if (sgv < 55) return 'text-red-600';
-        if (sgv < 70) return 'text-red-400';
-        if (sgv > 250) return 'text-yellow-600';
-        if (sgv > 180) return 'text-yellow-400';
-        return 'text-green-400';
-    };
-
-    function updateUI() {
-        const entries = state.data.entries;
-        if(entries.length === 0) return;
-
-        const latest = entries[entries.length - 1];
-        const currentBgEl = document.getElementById('current-bg');
-        if(currentBgEl) {
-            currentBgEl.textContent = latest.sgv;
-            currentBgEl.className = currentBgEl.className.replace(/text-(red|yellow|green)-\d+/, '');
-            currentBgEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
-        }
-        
-        const arrowEl = document.getElementById('trend-arrow');
-        if(arrowEl) {
-            arrowEl.textContent = getDirectionArrow(latest.direction);
-            arrowEl.className = arrowEl.className.replace(/text-(red|yellow|green)-\d+/, '');
-            arrowEl.classList.add(...getBgColorClass(latest.sgv).split(' '));
-        }
-        
-        if(entries.length > 1) {
-            const prev = entries[entries.length - 2];
-            const delta = latest.sgv - prev.sgv;
-            const deltaEl = document.getElementById('bg-delta');
-            if(deltaEl) deltaEl.textContent = `${delta >= 0 ? '+' : ''}${delta} mg/dL`;
-        }
-
-        const timeDiff = Math.floor((new Date() - new Date(latest.dateString)) / 60000);
-        const lastUpdEl = document.getElementById('last-update-time');
-        if(lastUpdEl) lastUpdEl.textContent = `${timeDiff} min ago`;
-
-        let iob = '--', cob = '--', res = '--', cage = '--';
-        const ds = state.data.devicestatus;
-        if(ds) {
-            let iobVal = undefined;
-            if (ds.loop?.iob?.iob !== undefined) iobVal = ds.loop.iob.iob;
-            else if (ds.pump?.iob?.iob !== undefined) iobVal = ds.pump.iob.iob;
-            else if (typeof ds.pump?.iob === 'number') iobVal = ds.pump.iob;
-            else if (ds.openaps?.iob?.iob !== undefined) iobVal = ds.openaps.iob.iob;
-            else if (typeof ds.iob === 'number') iobVal = ds.iob;
-            if (iobVal !== undefined) iob = parseFloat(iobVal).toFixed(1);
-
-            let cobVal = undefined;
-            if (ds.loop?.cob?.cob !== undefined) cobVal = ds.loop.cob.cob;
-            else if (ds.pump?.cob?.cob !== undefined) cobVal = ds.pump.cob.cob;
-            else if (typeof ds.pump?.cob === 'number') cobVal = ds.pump.cob;
-            else if (typeof ds.cob === 'number') cobVal = ds.cob;
-            if (cobVal !== undefined) cob = parseFloat(cobVal).toFixed(0);
-
-            let resVal = undefined;
-            if (ds.pump?.reservoir !== undefined) resVal = ds.pump.reservoir;
-            else if (ds.loop?.pump?.reservoir !== undefined) resVal = ds.loop.pump.reservoir;
-            if (resVal !== undefined) res = Math.round(resVal) + 'U';
-        }
-        
-        const siteChanges = state.data.treatments.filter(t => t.eventType === 'Site Change');
-        if(siteChanges.length > 0) {
-            const lastChange = new Date(siteChanges[siteChanges.length-1].created_at);
-            const hoursSince = (new Date() - lastChange) / (1000 * 60 * 60);
-            cage = hoursSince < 24 ? `${hoursSince.toFixed(1)}h` : `${(hoursSince/24).toFixed(1)}d`;
-        }
-
-        const safeSetText = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text; };
-        safeSetText('current-iob', iob);
-        safeSetText('current-cob', cob);
-        safeSetText('current-res', res);
-        safeSetText('current-cage', cage);
-
-        calculateSummaries();
-        updateChart();
-        if(agpMode) drawAGPCharts();
-    }
-
-    function calculateSummaries() {
-        const now = new Date();
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
-        const sevenDaysAgo = new Date(todayStart); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-        const todayStats = calcStatsForPeriod(todayStart, todayEnd);
-        const sevenDaysStats = calcStatsForPeriod(sevenDaysAgo, todayEnd);
-
-        renderStats('td', todayStats, 1);
-        renderStats('7d', sevenDaysStats, 7);
-    }
-
-    function calcStatsForPeriod(startDate, endDate) {
-        const periodEntries = state.data.entries.filter(e => { const d = new Date(e.dateString); return d >= startDate && d < endDate; });
-        const periodTreats = state.data.treatments.filter(t => { const d = new Date(t.created_at); return d >= startDate && d < endDate; });
-
-        let tbr = 0, tir = 0, tar = 0, sum = 0, mean = 0, cv = 0, gmi = 0;
-        const total = periodEntries.length;
-        if(total > 0) {
-            tbr = periodEntries.filter(e => e.sgv < 70).length / total * 100;
-            tir = periodEntries.filter(e => e.sgv >= 70 && e.sgv <= 180).length / total * 100;
-            tar = periodEntries.filter(e => e.sgv > 180).length / total * 100;
-            periodEntries.forEach(e => sum += e.sgv);
-            mean = sum / total;
-            
-            let sumSqDiff = 0;
-            periodEntries.forEach(e => sumSqDiff += Math.pow(e.sgv - mean, 2));
-            const sd = Math.sqrt(sumSqDiff / total);
-            cv = (sd / mean) * 100;
-            gmi = 3.31 + (0.02392 * mean);
-        }
-
-        let totalCarbs = 0, bolus = 0, smb = 0;
-        periodTreats.forEach(t => {
-            if(t.carbs) totalCarbs += t.carbs;
-            if(t.insulin) {
-                const type = (t.eventType || '').toLowerCase();
-                if(type.includes('temp basal') || type.includes('profile')) return;
-                
-                if(t.insulin <= 0.4 || type.includes('smb') || t.isSMB) {
-                    smb += t.insulin;
-                } else {
-                    bolus += t.insulin;
-                }
-            }
-        });
-
-        const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
-        const tdd = basal + bolus + smb;
-        
-        const activeInsulin = bolus + smb;
-        const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
-        const crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
-
-        return { tbr, tir, tar, carbs: totalCarbs, bolus, smb, basal, tdd, mean, cv, gmi, crBolus, crTotal };
-    }
-
-    function calculateIntegralBasal(startDate, endDate, periodTreats) {
-        if(!state.data.profile || !state.data.profile.basal) return 0;
-        let totalBasalUnits = 0;
-        const profileBasals = state.data.profile.basal;
-        const tempBasals = periodTreats.filter(t => t.eventType === 'Temp Basal' && t.duration > 0 && t.absolute !== undefined);
-
-        let currentIter = new Date(startDate);
-        const endIter = new Date(endDate);
-        if(endIter > new Date()) endIter.setTime(new Date().getTime());
-
-        while(currentIter < endIter) {
-            const iterTimeMs = currentIter.getTime();
-            const h = currentIter.getHours(), m = currentIter.getMinutes();
-            const secondsSinceMidnight = (h * 3600) + (m * 60);
-            
-            let currentRate = profileBasals[0].value;
-            for(let i = profileBasals.length - 1; i >= 0; i--) {
-                if(secondsSinceMidnight >= profileBasals[i].timeAsSeconds) { currentRate = profileBasals[i].value; break; }
-            }
-
-            for(const tb of tempBasals) {
-                const tbStart = new Date(tb.created_at).getTime();
-                const tbEnd = tbStart + (tb.duration * 60 * 1000);
-                if(iterTimeMs >= tbStart && iterTimeMs < tbEnd) { currentRate = tb.absolute; break; }
-            }
-            totalBasalUnits += (currentRate / 60);
-            currentIter.setMinutes(currentIter.getMinutes() + 1);
-        }
-        return totalBasalUnits;
-    }
-
-    function safeSetStyle(id, prop, val) { const el = document.getElementById(id); if(el) el.style[prop] = val; }
-    function safeSetText(id, text) { const el = document.getElementById(id); if(el) el.textContent = text; }
-
-    function renderStats(prefix, stats, days) {
-        safeSetStyle(`${prefix}-tbr`, 'height', `${stats.tbr}%`);
-        safeSetStyle(`${prefix}-tir`, 'height', `${stats.tir}%`);
-        safeSetStyle(`${prefix}-tar`, 'height', `${stats.tar}%`);
-        safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
-
-        const tdd = stats.tdd / days;
-        const basal = stats.basal / days;
-        const bolus = stats.bolus / days;
-        const smb = stats.smb / days;
-
-        safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
-        safeSetText(`${prefix}-basal`, basal.toFixed(1));
-        safeSetText(`${prefix}-smb`, smb.toFixed(1));
-        safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
-        safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
-        safeSetText(`${prefix}-mean`, Math.round(stats.mean));
-
-        safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
-        safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
-
-        if(tdd > 0) {
-            safeSetStyle(`${prefix}-basal-bar`, 'width', `${(basal/tdd)*100}%`);
-            safeSetStyle(`${prefix}-smb-bar`, 'width', `${(smb/tdd)*100}%`);
-            safeSetStyle(`${prefix}-bolus-bar`, 'width', `${(bolus/tdd)*100}%`);
-        }
-
-        safeSetText(`${prefix}-cv-agp`, Math.round(stats.cv));
-    }
-
-    function drawAGPCharts() {
-        if(!state.data.entries.length) return;
-        
-        // --- Calculate AGP Percentiles ---
-        const now = new Date();
-        const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const targetEntries = state.data.entries.filter(e => new Date(e.dateString) >= sevenDaysAgo);
-        
-        const slots = Array.from({length: 48}, () => []);
-        targetEntries.forEach(e => {
-            const d = new Date(e.dateString);
-            const slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
-            slots[slot].push(e.sgv);
-        });
-
-        const percentiles = { 10:[], 25:[], 50:[], 75:[], 90:[], times:[] };
-        for(let i = 0; i <= 48; i++) {
-            let idx = i === 48 ? 0 : i;
-            let data = slots[idx];
-            if(data.length === 0 && i > 0) data = slots[i-1]; 
-            if(data.length === 0) data = [100]; 
-            
-            data.sort((a,b) => a - b);
-            const getP = (p) => {
-                const pos = (data.length - 1) * p;
-                const base = Math.floor(pos);
-                const rest = pos - base;
-                if(data[base+1] !== undefined) return data[base] + rest * (data[base+1] - data[base]);
-                return data[base];
-            };
-            percentiles.times.push(i * 0.5);
-            percentiles[10].push(getP(0.10));
-            percentiles[25].push(getP(0.25));
-            percentiles[50].push(getP(0.50));
-            percentiles[75].push(getP(0.75));
-            percentiles[90].push(getP(0.90));
-        }
-
-        Chart.defaults.color = '#64748b';
-        Chart.defaults.font.family = 'Inter, sans-serif';
-
-        const targetAnnotation = { 
-            type: 'box', 
-            yMin: 70, yMax: 180, 
-            backgroundColor: 'rgba(74, 222, 128, 0.08)',
-            borderColor: 'rgba(74, 222, 128, 0.3)',
-            borderWidth: 1,
-            borderDash: [5, 5],
-            drawTime: 'beforeDraw' 
-        };
-
-        // --- Render Today's Glucose Chart (Top) ---
-        const todayStart = new Date();
-        todayStart.setHours(0,0,0,0);
-        const todayEntries = state.data.entries.filter(e => new Date(e.dateString) >= todayStart);
-        const todayData = todayEntries.map(e => {
-            const d = new Date(e.dateString);
-            return { x: d.getHours() + d.getMinutes() / 60, y: e.sgv };
-        });
-
-        const ctxProfEl = document.getElementById('agpProfileChart');
-        if(!ctxProfEl) return;
-        const ctxProf = ctxProfEl.getContext('2d');
-        
-        if(agpProfileChartInstance) agpProfileChartInstance.destroy();
-        agpProfileChartInstance = new Chart(ctxProf, {
-            type: 'scatter',
-            data: {
-                datasets: [{
-                    data: todayData,
-                    backgroundColor: (ctx) => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; },
-                    pointRadius: 1.5
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, animation: false,
-                plugins: { 
-                    legend: { display: false }, tooltip: { enabled: false },
-                    annotation: { annotations: { target: targetAnnotation } }
-                },
-                layout: { padding: { left: 10, right: 10, top: 5, bottom: 0 } },
-                scales: {
-                    x: {
-                        type: 'linear', min: 0, max: 24,
-                        ticks: { stepSize: 3, callback: v => v+':00', font: {size: 9} },
-                        grid: { color: 'rgba(51, 65, 85, 0.3)' }
-                    },
-                    y: {
-                        min: 40, max: 300,
-                        ticks: { stepSize: 50, font: {size: 9} },
-                        grid: { color: 'rgba(51, 65, 85, 0.3)' }
-                    }
-                }
-            }
-        });
-
-        // --- Render AGP Chart (Bottom) ---
-        const ctxAgpEl = document.getElementById('agpChart');
-        if(!ctxAgpEl) return;
-        const ctxAgp = ctxAgpEl.getContext('2d');
-
-        if(agpChartInstance) agpChartInstance.destroy();
-        agpChartInstance = new Chart(ctxAgp, {
-            type: 'line',
-            data: {
-                labels: percentiles.times,
-                datasets: [
-                    { data: percentiles[10], fill: false, borderWidth: 0, pointRadius: 0, tension: 0.3 },
-                    { data: percentiles[25], fill: 0, backgroundColor: 'rgba(74, 222, 128, 0.15)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
-                    { data: percentiles[75], fill: 1, backgroundColor: 'rgba(74, 222, 128, 0.4)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
-                    { data: percentiles[90], fill: 2, backgroundColor: 'rgba(74, 222, 128, 0.15)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
-                    { data: percentiles[50], fill: false, borderColor: 'rgba(74, 222, 128, 1)', borderWidth: 2, pointRadius: 0, tension: 0.3 }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, animation: false,
-                plugins: { 
-                    legend: { display: false }, tooltip: { enabled: false },
-                    annotation: { annotations: { target: targetAnnotation } }
-                },
-                layout: { padding: { left: 10, right: 10, top: 0, bottom: 5 } },
-                scales: {
-                    x: {
-                        type: 'linear', min: 0, max: 24,
-                        ticks: { stepSize: 3, callback: v => v+':00', font: {size: 9} },
-                        grid: { color: 'rgba(51, 65, 85, 0.3)' }
-                    },
-                    y: {
-                        min: 40, max: 300,
-                        ticks: { stepSize: 50, font: {size: 9} },
-                        grid: { color: 'rgba(51, 65, 85, 0.3)' }
-                    }
-                }
-            }
-        });
-    }
-
-    function updateChart() {
-        if(!state.data.entries.length) return;
-        const ctxEl = document.getElementById('bgChart');
-        if(!ctxEl) return;
-        const ctx = ctxEl.getContext('2d');
-        
-        const targetEnd = new Date(); targetEnd.setDate(targetEnd.getDate() - state.offsetDays);
-        const targetStart = new Date(targetEnd); targetStart.setHours(targetStart.getHours() - state.timeRangeHours);
-
-        const plotEntries = state.data.entries.filter(e => { const d = new Date(e.dateString); return d >= targetStart && d <= targetEnd; });
-        const plotTreats = state.data.treatments.filter(t => { const d = new Date(t.created_at); return d >= targetStart && d <= targetEnd; });
-
-        const scatterData = plotEntries.map(e => ({ x: new Date(e.dateString).getTime(), y: e.sgv }));
-        const yAxisMax = Math.max(250, ...scatterData.map(d => d.y)) + 30; 
-        const yAxisMin = 40;
-
-        const annotations = {
-            targetRange: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(74, 222, 128, 0.08)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' }
-        };
-
-        plotTreats.forEach((t, i) => {
-            const time = new Date(t.created_at).getTime();
-            if(t.carbs) {
-                const p = Math.max(3, Math.sqrt(t.carbs) * 1.5);
-                annotations[`carb_${i}`] = {
-                    type: 'label', xValue: time, yValue: yAxisMax - 25,
-                    backgroundColor: 'rgba(234, 179, 8, 0.7)', color: '#fff', content: `${t.carbs}`, font: { size: 11, weight: 'bold' },
-                    borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 }, callout: { display: false },
-                    enter(ctx, ev) { showTooltip(ev, `Carbs: ${t.carbs}g`, time, 'text-yellow-400'); }, leave() { hideTooltip(); }
-                };
-            }
-            if(t.insulin) {
-                const type = (t.eventType || '').toLowerCase();
-                if(type.includes('temp basal') || type.includes('profile')) return; 
-                
-                const isSMB = (t.insulin <= 0.4 || type.includes('smb') || t.isSMB);
-                const color = isSMB ? 'rgba(168, 85, 247, 0.7)' : 'rgba(6, 182, 212, 0.7)';
-                const p = Math.max(3, Math.sqrt(t.insulin) * 3);
-                annotations[`ins_${i}`] = {
-                    type: 'label', xValue: time, yValue: yAxisMin + 15,
-                    backgroundColor: color, color: '#fff', content: `${t.insulin}`, font: { size: 11, weight: 'bold' },
-                    borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 }, callout: { display: false },
-                    enter(ctx, ev) { showTooltip(ev, `${isSMB?'SMB':'Bolus'}: ${t.insulin}U`, time, isSMB?'text-purple-400':'text-cyan-400'); }, leave() { hideTooltip(); }
-                };
-            }
-        });
-
-        const basalData = [];
-        const profileBasalData = [];
-        let maxBasalVal = 1;
-
-        if(state.data.profile && state.data.profile.basal) {
-            const profileBasals = state.data.profile.basal;
-            let iter = new Date(targetStart); iter.setMinutes(0,0,0);
-            while(iter <= targetEnd) {
-                const iterTime = iter.getTime();
-                const h = iter.getHours(), m = iter.getMinutes();
-                const secondsSinceMidnight = (h * 3600) + (m * 60);
-                
-                let profRate = profileBasals[0].value;
-                for(let i = profileBasals.length - 1; i >= 0; i--) {
-                    if(secondsSinceMidnight >= profileBasals[i].timeAsSeconds) { profRate = profileBasals[i].value; break; }
-                }
-                
-                let actualRate = profRate;
-                const tempBasal = plotTreats.find(t => {
-                    if(t.eventType !== 'Temp Basal' || t.duration <= 0 || t.absolute === undefined) return false;
-                    const ts = new Date(t.created_at).getTime(), te = ts + (t.duration * 60000);
-                    return iterTime >= ts && iterTime < te;
-                });
-                if(tempBasal) actualRate = tempBasal.absolute;
-
-                profileBasalData.push({ x: iterTime, y: profRate });
-                basalData.push({ x: iterTime, y: actualRate }); 
-                
-                if(profRate > maxBasalVal) maxBasalVal = profRate;
-                if(actualRate > maxBasalVal) maxBasalVal = actualRate;
-
-                iter.setMinutes(iter.getMinutes() + 5);
-            }
-        }
-
-        const yBasalMax = Math.max(maxBasalVal * 6, 3); 
-
-        function showTooltip(event, text, timeMs, colorClass) {
-            if(!tooltipEl) return;
-            const d = new Date(timeMs);
-            tooltipEl.innerHTML = `<div class="font-bold ${colorClass} mb-1">${text}</div><div class="text-slate-300 text-xs">${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}</div>`;
-            tooltipEl.style.left = event.x + 'px'; tooltipEl.style.top = event.y + 'px';
-            tooltipEl.classList.remove('hidden');
-        }
-        function hideTooltip() { if(tooltipEl) tooltipEl.classList.add('hidden'); }
-
-        if(chartInstance) chartInstance.destroy();
-        Chart.defaults.color = '#64748b';
-        Chart.defaults.font.family = 'Inter, sans-serif';
-
-        chartInstance = new Chart(ctx, {
-            type: 'scatter',
-            data: {
-                datasets: [
-                    {
-                        label: 'BG', data: scatterData,
-                        backgroundColor: (ctx) => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; },
-                        pointRadius: 3, order: 4, yAxisID: 'y'
-                    },
-                    {
-                        type: 'line', label: 'Profile', data: profileBasalData,
-                        borderColor: 'rgba(59, 130, 246, 0.4)', borderDash: [3, 3],
-                        borderWidth: 1.5, fill: false, stepped: true, pointRadius: 0, order: 3, yAxisID: 'yBasal'
-                    },
-                    {
-                        type: 'line', label: 'Basal', data: basalData,
-                        borderColor: 'rgba(59, 130, 246, 0.8)', backgroundColor: 'rgba(59, 130, 246, 0.15)',
-                        borderWidth: 1, fill: true, stepped: true, pointRadius: 0, order: 2, yAxisID: 'yBasal'
-                    }
-                ]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false, animation: false,
-                interaction: { mode: 'nearest', intersect: false },
-                plugins: { 
-                    legend: { display: false }, 
-                    tooltip: { 
-                        enabled: true, backgroundColor: 'rgba(15, 23, 42, 0.9)', titleFont: { size: 12 }, bodyFont: { size: 13, weight: 'bold' }, padding: 8,
-                        callbacks: { label: function(c) { return c.dataset.label==='BG' ? `BG: ${c.raw.y}` : `${c.dataset.label}: ${c.raw.y} U/h`; } }
-                    }, 
-                    annotation: { annotations } 
-                },
-                layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
-                scales: {
-                    x: {
-                        type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
-                        min: targetStart.getTime(), max: targetEnd.getTime(),
-                        grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { font: { size: 11 } }
-                    },
-                    y: {
-                        position: 'left', min: yAxisMin, max: yAxisMax,
-                        grid: { color: 'rgba(51, 65, 85, 0.3)' }, ticks: { font: { size: 11 } }
-                    },
-                    yBasal: {
-                        position: 'right', min: 0, max: yBasalMax, reverse: true,
-                        grid: { display: false },
-                        ticks: { font: { size: 9 }, color: 'rgba(59, 130, 246, 0.7)', callback: v => v <= maxBasalVal ? v : '' }
-                    }
-                }
-            }
-        });
+    function resetDataAndCharts() {
+      state.data = { entries: [], treatments: [], profile: null, devicestatus: [] };
+      state.lastFetchAt = null;
+      state.lastMainChartSignature = '';
+      if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      if (agpChartInstance) { agpChartInstance.destroy(); agpChartInstance = null; }
+      if (agpProfileChartInstance) { agpProfileChartInstance.destroy(); agpProfileChartInstance = null; }
+      document.querySelectorAll('.chart-tooltip').forEach(el => el.remove());
     }
 
     function initApp() {
-        if(!state.url) { document.getElementById('settings-modal').classList.remove('hidden'); return; }
-        fetchAllData(true);
-        if(fetchInterval) clearInterval(fetchInterval);
-        fetchInterval = setInterval(() => { if(state.offsetDays === 0) fetchAllData(false); }, REFRESH_INTERVAL_MS);
+      if (!state.url) {
+        document.getElementById('settings-modal').classList.remove('hidden');
+        return;
+      }
+      fetchAllData(true);
+      if (fetchInterval) clearInterval(fetchInterval);
+      fetchInterval = setInterval(() => {
+        if (state.offsetDays === 0) fetchAllData(false);
+      }, CONFIG.REFRESH_INTERVAL_MS);
     }
 
-    document.addEventListener('visibilitychange', () => { if(!document.hidden && state.url && state.offsetDays === 0) fetchAllData(false); });
+    setInterval(() => {
+      const container = document.getElementById('grid-container');
+      container.classList.remove(`layout-pattern-${currentLayoutPattern}`);
+      currentLayoutPattern = (currentLayoutPattern + 1) % 4;
+      container.classList.add(`layout-pattern-${currentLayoutPattern}`);
+      requestAnimationFrame(() => {
+        chartInstance?.resize();
+        if (agpMode) { agpChartInstance?.resize(); agpProfileChartInstance?.resize(); }
+      });
+    }, 10 * 60 * 1000);
+
+    setInterval(() => {
+      const shiftX = Math.floor(Math.random() * 5) - 2;
+      const shiftY = Math.floor(Math.random() * 5) - 2;
+      document.getElementById('shift-container').style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+    }, 60 * 1000);
+
+    setInterval(() => {
+      idleMinutes++;
+      if (idleMinutes >= 3) document.body.classList.add('dimmed');
+    }, 60 * 1000);
+
+    setInterval(() => {
+      if (state.offsetDays > 0 && state.lastHistoryInteractionAt > 0) {
+        const elapsed = Date.now() - state.lastHistoryInteractionAt;
+
+        if (elapsed > 3 * 60 * 1000) {
+          returnToToday();
+        }
+      }
+    }, 30 * 1000);
+
+    window.addEventListener('beforeunload', () => {
+      if (fetchInterval) clearInterval(fetchInterval);
+      chartInstance?.destroy();
+      agpChartInstance?.destroy();
+      agpProfileChartInstance?.destroy();
+    });
+
+    initEvents();
+    updateDateControls();
     initApp();
-</script>
+  </script>
 </body>
+
 </html>
