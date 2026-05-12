@@ -145,6 +145,47 @@
       display: block;
     }
 
+
+    body.fullscreen-mode #grid-container {
+      height: 100dvh;
+    }
+
+    @media (max-width: 768px) {
+      body.fullscreen-mode #grid-container {
+        display: grid;
+        overflow: hidden;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        grid-template-areas:
+          "current"
+          "summary"
+          "graph";
+      }
+
+      body.fullscreen-mode .area-current {
+        min-height: 0;
+        height: clamp(145px, 22dvh, 190px);
+      }
+
+      body.fullscreen-mode .area-summary {
+        min-height: 0;
+        height: clamp(210px, 30dvh, 270px);
+      }
+
+      body.fullscreen-mode .area-graph {
+        min-height: 0;
+        height: auto;
+      }
+
+      body.fullscreen-mode .panel {
+        flex: initial;
+      }
+
+      body.fullscreen-mode .area-graph .flex-1.relative {
+        min-height: 0;
+      }
+    }
+
     .chart-tooltip {
       background: rgba(15, 23, 42, 0.96);
       border-radius: 8px;
@@ -527,6 +568,7 @@
 
   <script>
     lucide.createIcons();
+    setTimeout(syncFullscreenClass, 0);
 
     class ClinicalA1cCalculator {
       constructor(config = {}) {
@@ -592,6 +634,28 @@
     let agpMode = false;
     let currentLayoutPattern = 0;
     let idleMinutes = 0;
+
+
+    function syncFullscreenClass() {
+      const isFullscreen =
+        !!document.fullscreenElement ||
+        !!document.webkitFullscreenElement ||
+        window.matchMedia('(display-mode: fullscreen)').matches ||
+        window.navigator.standalone === true;
+
+      document.body.classList.toggle('fullscreen-mode', isFullscreen);
+
+      if (chartInstance) {
+        setTimeout(() => {
+          chartInstance.resize();
+          chartInstance.update('none');
+        }, 120);
+      }
+    }
+
+    document.addEventListener('fullscreenchange', syncFullscreenClass);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenClass);
+    window.addEventListener('resize', syncFullscreenClass);
 
     const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
