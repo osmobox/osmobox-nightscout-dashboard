@@ -436,27 +436,53 @@
       </div>
 
       <div class="panel area-graph flex flex-col min-h-0 relative">
-        <div class="flex justify-between items-center mb-1 px-1 flex-none relative">
-          <div class="flex items-center gap-1">
-            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition">
+        <div class="flex justify-between items-center mb-1 px-1 flex-none relative gap-2">
+          <div class="flex items-center gap-1 min-w-0 flex-none">
+            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition" aria-label="previous day">
               <i data-lucide="chevron-left" class="w-4 h-4"></i>
             </button>
-            <span id="chart-date-label" class="font-bold text-slate-300 w-24 text-center text-xs">Today</span>
-            <button id="btn-next"
-              class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed"
-              disabled>
+            <div id="chart-date-label" class="min-w-[92px] text-center font-black text-slate-100 text-xs bg-slate-900/80 border border-slate-600/60 rounded px-2 py-1 shadow z-30">today</div>
+            <button id="btn-next" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed" aria-label="next day" disabled>
               <i data-lucide="chevron-right" class="w-4 h-4"></i>
             </button>
             <button id="btn-today"
-              class="px-2 py-1 bg-slate-700/50 hover:bg-slate-600 rounded text-[11px] font-bold text-slate-200 transition">Today</button>
+              class="ml-1 px-3 py-1 bg-slate-600 hover:bg-slate-500 text-white shadow rounded text-[11px] font-black transition">Today</button>
           </div>
-          <div class="hidden sm:block text-[10px] text-slate-400 font-medium">← Drag to Pan →</div>
-          <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium">
+          
+          <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium flex-none">
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="3">3h</button>
-            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow"
-              data-hours="6">6h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow" data-hours="6">6h</button>
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="12">12h</button>
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="24">24h</button>
+          </div>
+        </div>
+        <div id="selected-day-stats"
+          class="absolute right-3 top-10 hidden md:flex z-20 flex-col gap-1.5 rounded-lg bg-slate-900/90 border border-slate-600/70 px-3 py-2 shadow-xl pointer-events-none min-w-[168px]">
+          <div id="selected-day-title" class="text-[10px] font-black text-slate-300 tracking-widest text-right">DAY</div>
+          <div class="flex flex-col items-stretch gap-1.5">
+            <div class="flex items-end justify-between leading-none">
+              <span class="text-[10px] font-black text-green-400 tracking-widest">TIR</span>
+              <span id="selected-day-tir" class="text-2xl font-black text-green-400 leading-none">--%</span>
+            </div>
+            <div class="h-2.5 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 flex">
+              <div id="selected-day-tbr-bar" class="bg-red-500 h-full" style="width:0%"></div>
+              <div id="selected-day-tir-bar" class="bg-green-400 h-full" style="width:0%"></div>
+              <div id="selected-day-tar-bar" class="bg-yellow-400 h-full" style="width:0%"></div>
+            </div>
+            <div class="flex items-center justify-between border-b border-slate-700/60 pb-1">
+              <span class="text-[10px] font-bold text-emerald-300 tracking-widest">Score</span>
+              <span id="selected-day-tir-score" class="text-lg font-black text-emerald-300 leading-none">--</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-right pt-0.5">
+            <span class="text-[10px] font-bold text-slate-300 text-left">AVG</span>
+            <span><span id="selected-day-avg" class="text-sm font-black text-white">--</span><span class="text-[9px] text-slate-500 ml-0.5">mg/dL</span></span>
+            <span class="text-[10px] font-bold text-pink-300 text-left">GMI / ADJ</span>
+            <span><span id="selected-day-gmi" class="text-sm font-black text-pink-300">--</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-adj" class="text-sm font-black text-pink-200">--</span></span>
+            <span class="text-[10px] font-bold text-yellow-400 text-left">CARBS</span>
+            <span><span id="selected-day-carbs" class="text-sm font-black text-yellow-300">--</span><span class="text-[9px] text-slate-500 ml-0.5">g</span></span>
+            <span class="text-[10px] font-bold text-orange-400 text-left">CR</span>
+            <span><span id="selected-day-cr-bolus" class="text-sm font-black text-orange-200">--</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-cr-total" class="text-sm font-black text-orange-300">--</span></span>
           </div>
         </div>
         <div
@@ -1066,40 +1092,62 @@
     }
 
     function getMainChartPayload() {
-      const targetDay = new Date();
-      targetDay.setDate(targetDay.getDate() - state.offsetDays);
-      const midnightStart = new Date(targetDay);
-      midnightStart.setHours(0, 0, 0, 0);
-      const midnightEnd = new Date(targetDay);
-      midnightEnd.setHours(23, 59, 59, 999);
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const timelineStart = new Date(todayStart);
+      timelineStart.setDate(timelineStart.getDate() - 7);
+      const timelineEnd = new Date(todayStart);
+      timelineEnd.setDate(timelineEnd.getDate() + 1);
+      timelineEnd.setHours(23, 59, 59, 999);
 
-      let targetStart;
-      let initialDisplayMax;
+      const selectedDayStart = new Date(todayStart);
+      selectedDayStart.setDate(selectedDayStart.getDate() - state.offsetDays);
+      const selectedDayEnd = new Date(selectedDayStart);
+      selectedDayEnd.setDate(selectedDayEnd.getDate() + 1);
 
-      if (state.offsetDays === 0) {
-        const targetEnd = new Date();
-        targetStart = new Date(targetEnd);
-        targetStart.setHours(targetStart.getHours() - state.timeRangeHours);
-        initialDisplayMax = targetEnd.getTime() + 2 * 60 * 60 * 1000;
-      } else {
-        targetStart = new Date(midnightStart);
-        initialDisplayMax = Math.min(
-          midnightStart.getTime() + state.timeRangeHours * 60 * 60 * 1000,
-          midnightEnd.getTime()
-        );
+      let targetStart = new Date(selectedDayStart);
+      if (state.offsetDays === 0 && state.timeRangeHours < 24) {
+        const nowMs = Date.now();
+        const earliestToday = selectedDayStart.getTime();
+        targetStart = new Date(Math.max(earliestToday, nowMs - state.timeRangeHours * 60 * 60 * 1000));
       }
+      const initialDisplayMax = Math.min(targetStart.getTime() + state.timeRangeHours * 60 * 60 * 1000, timelineEnd.getTime());
+      const panMaxEnd = new Date(timelineEnd);
 
-      const panMaxEnd = new Date(midnightEnd.getTime() + 2 * 60 * 60 * 1000);
+      const plotEntries = state.data.entries.filter(e => {
+        const d = toTimeMs(e);
+        return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
+      });
+      const plotTreats = state.data.treatments.filter(t => {
+        const d = toTimeMs(t, 'created_at');
+        return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
+      });
+      const plotDeviceStatus = state.data.devicestatus.filter(d => {
+        const dt = toTimeMs(d, 'created_at');
+        return dt >= timelineStart.getTime() && dt <= panMaxEnd.getTime();
+      });
 
-      const plotEntries = state.data.entries.filter(e => { const d = toTimeMs(e); return d >= midnightStart.getTime() && d <= panMaxEnd.getTime(); });
-      const plotTreats = state.data.treatments.filter(t => { const d = toTimeMs(t, 'created_at'); return d >= midnightStart.getTime() && d <= panMaxEnd.getTime(); });
-      const plotDeviceStatus = state.data.devicestatus.filter(d => { const dt = toTimeMs(d, 'created_at'); return dt >= midnightStart.getTime() && dt <= panMaxEnd.getTime(); });
-
-      const scatterData = plotEntries.map(e => ({ x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) })).filter(d => Number.isFinite(d.y));
+      const scatterData = plotEntries
+        .map(e => ({ x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) }))
+        .filter(d => Number.isFinite(d.y));
       const yAxisMax = Math.max(250, ...scatterData.map(d => d.y)) + 30;
       const yAxisMin = 40;
 
-      const annotations = { targetRange: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(74, 222, 128, 0.08)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' } };
+      const annotations = {
+        targetRange: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(74, 222, 128, 0.08)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' },
+        selectedDay: { type: 'box', xMin: selectedDayStart.getTime(), xMax: selectedDayEnd.getTime(), backgroundColor: 'rgba(148, 163, 184, 0.07)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' }
+      };
+
+      for (let i = 0; i <= 8; i++) {
+        const day = new Date(timelineStart);
+        day.setDate(day.getDate() + i);
+        annotations[`midnight_${i}`] = {
+          type: 'line', xMin: day.getTime(), xMax: day.getTime(),
+          borderColor: 'rgba(148, 163, 184, 0.35)', borderWidth: 1, borderDash: [4, 4],
+          label: { display: false }
+        };
+      }
+
       plotTreats.forEach((t, i) => {
         const time = toTimeMs(t, 'created_at');
         const carbs = Number(t.carbs || 0);
@@ -1116,7 +1164,7 @@
           const p = Math.max(3, Math.sqrt(insulin) * 3);
           annotations[`ins_${i}`] = {
             type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff',
-            content: isSMB ? `${insulin}` : `${insulin}`,
+            content: `${insulin}`,
             font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 }
           };
         }
@@ -1126,7 +1174,7 @@
       const profileBasalData = [];
       let maxBasalVal = 1;
       if (state.data.profile?.basal) {
-        const iter = new Date(midnightStart); iter.setMinutes(0, 0, 0);
+        const iter = new Date(timelineStart); iter.setMinutes(0, 0, 0);
         while (iter <= panMaxEnd) {
           const tMs = iter.getTime();
           const profRate = getProfileBasalRate(iter);
@@ -1170,7 +1218,7 @@
         }
       }
 
-      return { targetStart, initialDisplayMax, midnightStart, panMaxEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
+      return { targetStart, initialDisplayMax, timelineStart, panMaxEnd, selectedDayStart, selectedDayEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
     }
 
     function getOrCreateTooltip(chart) {
@@ -1260,11 +1308,11 @@
               legend: { display: false },
               tooltip: { enabled: false, external: makeExternalTooltip(payload.plotTreats) },
               annotation: { annotations: payload.annotations },
-              zoom: { pan: { enabled: true, mode: 'x' }, limits: { x: { min: payload.midnightStart.getTime(), max: payload.panMaxEnd.getTime() } } }
+              zoom: { pan: { enabled: true, mode: 'x', onPanComplete: () => syncVisibleDayFromChart() }, zoom: { wheel: { enabled: false }, pinch: { enabled: false }, mode: 'x', onZoomComplete: () => syncVisibleDayFromChart() }, limits: { x: { min: payload.timelineStart.getTime(), max: payload.panMaxEnd.getTime() } } }
             },
             layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
             scales: {
-              x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, min: payload.targetStart.getTime(), max: payload.initialDisplayMax, grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { font: { size: 11 } } },
+              x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, min: payload.targetStart.getTime(), max: payload.initialDisplayMax, grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { font: { size: 11 }, maxRotation: 0, autoSkip: true } },
               y: { position: 'left', min: payload.yAxisMin, max: payload.yAxisMax, afterBuildTicks: addTargetTicks, ticks: targetTickStyle(), grid: { color: 'rgba(51,65,85,0.3)' } },
               yBasal: { position: 'right', min: 0, max: yBasalMax, reverse: true, grid: { display: false }, border: { display: false }, ticks: { display: false } },
               yIob: { position: 'right', min: 0, max: yIobMax, reverse: false, grid: { display: false }, border: { display: false }, ticks: { display: false } }
@@ -1283,7 +1331,7 @@
 
       chartInstance.options.plugins.tooltip.external = makeExternalTooltip(payload.plotTreats);
       chartInstance.options.plugins.annotation.annotations = payload.annotations;
-      chartInstance.options.plugins.zoom.limits.x.min = payload.midnightStart.getTime();
+      chartInstance.options.plugins.zoom.limits.x.min = payload.timelineStart.getTime();
       chartInstance.options.plugins.zoom.limits.x.max = payload.panMaxEnd.getTime();
       chartInstance.options.scales.x.min = payload.targetStart.getTime();
       chartInstance.options.scales.x.max = payload.initialDisplayMax;
@@ -1293,6 +1341,7 @@
       chartInstance.options.scales.yIob.max = yIobMax;
       chartInstance.options.scales.yIob.ticks.callback = v => v <= payload.maxIobVal ? v : '';
       chartInstance.update('none');
+      syncVisibleDayFromChart();
     }
 
     function addTargetTicks(axis) {
@@ -1439,17 +1488,112 @@
       }
     }
 
+
+    function formatRelativeDayLabel(offsetDays) {
+      const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+      if (n === 0) return 'today';
+      if (n === 1) return 'yesterday';
+      return `${n}daysago`;
+    }
+
+    function getSelectedDayRange() {
+      const base = new Date();
+      const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+      start.setDate(start.getDate() - state.offsetDays);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      return { start, end };
+    }
+
+    function updateSelectedDayStats() {
+      const panel = document.getElementById('selected-day-stats');
+      if (!panel) return;
+
+      if (state.offsetDays === 0) {
+        panel.classList.add('hidden');
+        panel.classList.remove('md:flex');
+        return;
+      }
+
+      const { start, end } = getSelectedDayRange();
+      const stats = calcStatsForPeriod(start, end);
+      const dateLabel = `${start.getMonth() + 1}/${start.getDate()}`;
+      const title = state.offsetDays === 1 ? `YESTERDAY ${dateLabel}` : `${state.offsetDays} DAYS AGO ${dateLabel}`;
+
+      safeSetText('selected-day-title', title);
+      safeSetText('selected-day-tir', `${Math.round(stats.tir)}%`);
+      safeSetText('selected-day-tir-score', Math.round(stats.tirScore));
+      safeSetText('selected-day-avg', stats.mean > 0 ? Math.round(stats.mean) : '--');
+      safeSetText('selected-day-gmi', stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
+      safeSetText('selected-day-adj', stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
+      safeSetText('selected-day-carbs', Math.round(stats.carbs));
+      safeSetText('selected-day-cr-bolus', stats.crBolus > 0 ? stats.crBolus.toFixed(1) : '--');
+      safeSetText('selected-day-cr-total', stats.crTotal > 0 ? stats.crTotal.toFixed(1) : '--');
+      safeSetStyle('selected-day-tbr-bar', 'width', `${Math.min(100, Math.max(0, stats.tbr))}%`);
+      safeSetStyle('selected-day-tir-bar', 'width', `${Math.min(100, Math.max(0, stats.tir))}%`);
+      safeSetStyle('selected-day-tar-bar', 'width', `${Math.min(100, Math.max(0, stats.tar))}%`);
+      panel.classList.remove('hidden');
+      panel.classList.add('md:flex');
+    }
+
+    function dayOffsetFromTimeMs(ms) {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const target = new Date(ms);
+      const targetStart = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 0, 0, 0, 0);
+      return Math.max(0, Math.min(7, Math.round((todayStart.getTime() - targetStart.getTime()) / 86400000)));
+    }
+
+    function syncVisibleDayFromChart() {
+      if (!chartInstance?.scales?.x) return;
+      const x = chartInstance.scales.x;
+      const center = (Number(x.min) + Number(x.max)) / 2;
+      const newOffset = dayOffsetFromTimeMs(center);
+      if (newOffset !== state.offsetDays) {
+        state.offsetDays = newOffset;
+      }
+      updateDateControls({ fromChart: true });
+    }
+
     function updateDateControls() {
       const btnNext = document.getElementById('btn-next');
       const btnPrev = document.getElementById('btn-prev');
       const label = document.getElementById('chart-date-label');
-      btnNext.disabled = state.offsetDays === 0;
-      btnNext.classList.toggle('opacity-50', btnNext.disabled);
-      btnNext.classList.toggle('cursor-not-allowed', btnNext.disabled);
-      btnPrev.disabled = state.offsetDays === 7;
-      btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
-      btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
-      label.textContent = state.offsetDays === 0 ? 'Today' : state.offsetDays === 1 ? 'Yesterday' : `${state.offsetDays} days ago`;
+      if (label) {
+        label.textContent = formatRelativeDayLabel(state.offsetDays);
+        label.title = formatRelativeDayLabel(state.offsetDays);
+      }
+      if (btnNext) {
+        btnNext.disabled = state.offsetDays === 0;
+        btnNext.classList.toggle('opacity-50', btnNext.disabled);
+        btnNext.classList.toggle('cursor-not-allowed', btnNext.disabled);
+      }
+      if (btnPrev) {
+        btnPrev.disabled = state.offsetDays === 7;
+        btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
+        btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
+      }
+      document.querySelectorAll('.time-btn').forEach(btn => {
+        const active = Number(btn.dataset.hours) === state.timeRangeHours;
+        btn.classList.toggle('bg-slate-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('shadow', active);
+        btn.classList.toggle('text-slate-200', !active);
+      });
+      updateSelectedDayStats();
+    }
+
+    async function jumpToDay(offsetDays) {
+      state.offsetDays = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+      state.lastHistoryInteractionAt = state.offsetDays > 0 ? Date.now() : 0;
+      updateDateControls();
+
+      if (state.offsetDays > 0) {
+        await fetchDeviceStatusForDay(state.offsetDays);
+      }
+
+      state.lastMainChartSignature = '';
+      updateChart({ force: true });
     }
 
     function returnToToday() {
@@ -1490,51 +1634,20 @@
         initApp();
       });
 
+      document.getElementById('btn-prev').addEventListener('click', async () => {
+        await jumpToDay(state.offsetDays + 1);
+      });
+      document.getElementById('btn-next').addEventListener('click', async () => {
+        await jumpToDay(state.offsetDays - 1);
+      });
+      document.getElementById('btn-today').addEventListener('click', returnToToday);
       document.querySelectorAll('.time-btn').forEach(btn => {
         btn.addEventListener('click', e => {
-          document.querySelectorAll('.time-btn').forEach(b => { b.classList.remove('bg-slate-600', 'text-white', 'shadow'); b.classList.add('text-slate-200'); });
-          e.currentTarget.classList.add('bg-slate-600', 'text-white', 'shadow');
-          e.currentTarget.classList.remove('text-slate-200');
-          state.timeRangeHours = Number(e.currentTarget.dataset.hours);
+          state.timeRangeHours = Number(e.currentTarget.dataset.hours) || 6;
           state.lastMainChartSignature = '';
+          updateDateControls();
           updateChart({ force: true });
         });
-      });
-
-      document.getElementById('btn-prev').addEventListener('click', async () => {
-        if (state.offsetDays < 7) {
-          state.offsetDays++;
-          state.lastHistoryInteractionAt = Date.now();
-
-          updateDateControls();
-
-          if (state.offsetDays > 0) {
-            await fetchDeviceStatusForDay(state.offsetDays);
-          }
-
-          state.lastMainChartSignature = '';
-          updateChart({ force: true });
-        }
-      });
-
-      document.getElementById('btn-next').addEventListener('click', async () => {
-        if (state.offsetDays > 0) {
-          state.offsetDays--;
-          state.lastHistoryInteractionAt = state.offsetDays > 0 ? Date.now() : 0;
-
-          updateDateControls();
-
-          if (state.offsetDays > 0) {
-            await fetchDeviceStatusForDay(state.offsetDays);
-          }
-
-          state.lastMainChartSignature = '';
-          updateChart({ force: true });
-        }
-      });
-
-      document.getElementById('btn-today').addEventListener('click', () => {
-        returnToToday();
       });
 
       document.getElementById('current-panel').addEventListener('click', (e) => {
