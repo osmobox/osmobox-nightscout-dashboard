@@ -167,7 +167,7 @@
   <div id="shift-container">
     <div id="grid-container" class="layout-pattern-0">
 
-      <!-- Left / Right Panel: Current BG Indicator -->
+      <!-- Current Glucose Indicator Panel -->
       <div id="current-panel" class="panel area-current relative flex flex-col justify-center items-center px-2">
         <div class="absolute top-2 right-2 flex gap-1 z-10">
           <button id="btn-fullscreen"
@@ -468,7 +468,7 @@
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="24">24h</button>
           </div>
         </div>
-        
+
         <!-- Hover / Day Inspector overlay details -->
         <div id="selected-day-stats"
           class="absolute right-3 top-10 hidden md:flex z-20 flex-col gap-1.5 rounded-lg bg-slate-900/90 border border-slate-600/70 px-3 py-2 shadow-xl pointer-events-none min-w-[168px]">
@@ -550,84 +550,38 @@
   <script>
     lucide.createIcons();
 
-    // --- STREAMING_CHUNK:Updating core analytics and insulin calculations... ---
-    // --- Advanced weighted HbA1c & Adjusted GMI Clinical Calculator ---
+    // --- Clinical GMI & Adjusted GMI Clinical Calculator ---
     class ClinicalA1cCalculator {
-      constructor(config = {}) {}
+      constructor(config = {}) {
+        this.lowThreshold = config.lowThreshold || 70;
+        this.highThreshold = config.highThreshold || 180;
+        this.veryHighThreshold = config.veryHighThreshold || 250;
+        this.penaltyHigh = config.penaltyHigh || 0.006;
+        this.penaltyVeryHigh = config.penaltyVeryHigh || 0.012;
+      }
+
+      _extractValues(rawData) {
+        if (!Array.isArray(rawData)) return [];
+        return rawData
+          .map(item => {
+            // Support both mapped and raw glucose structures gracefully
+            return Number(item.sgv ?? item.glucose ?? item.value ?? 0);
+          })
+          .filter(v => Number.isFinite(v) && v > 0);
+      }
 
       analyze(glucoseData) {
-        // Safe mapping to support both Analytical and Dashboard schemas
-        const validData = glucoseData.map(d => {
-          const v = Number(d.sgv ?? d.glucose ?? d.value);
-          let ms = d.date;
-          if (typeof ms !== 'number') {
-            const raw = d.dateString ?? d.created_at ?? d.date;
-            ms = typeof raw === 'number' ? raw : new Date(raw).getTime();
-          }
-          return { sgv: v, date: ms };
-        }).filter(d => Number.isFinite(d.sgv) && d.sgv > 0 && Number.isFinite(d.date));
-
-        if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
-
-        // Define base target offset as latest record timestamp
-        const latestMs = validData[validData.length - 1].date;
-        
-        let sumWeight = 0;
-        let sumWeightedSgv = 0;       // Standard weighted GMI
-        let sumWeightedEffSgv = 0;    // Adjusted HbA1c with glycation dynamics
-
-        for (let i = 0; i < validData.length; i++) {
-          const d = validData[i];
-          const v = d.sgv;
-          
-          // 1. Exposure time (AUC calculation)
-          let durationMs = 5 * 60 * 1000;
-          if (i > 0) {
-             const prev = validData[i - 1];
-             durationMs = d.date - prev.date;
-             // Bound gap up to 15 min exposure
-             if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
-             if (durationMs < 0) durationMs = 5 * 60 * 1000;
-          }
-
-          // 2. RBC decay factor (120-day half life representation)
-          const ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
-          const rbcWeight = Math.max(0, 1 - (ageDays / 120));
-          const finalWeight = durationMs * rbcWeight;
-
-          sumWeight += finalWeight;
-          sumWeightedSgv += v * finalWeight;
-
-          // 3. Hierarchical glycation models mapping extreme bounds
-          let vEff = v;
-          if (v < 70) {
-            vEff = 70; // Low glucose glycative saturation clip
-          } else if (v >= 70 && v < 100) {
-            vEff = v;
-          } else if (v >= 100 && v < 140) {
-            vEff = v * 1.01;
-          } else if (v >= 140 && v < 180) {
-            vEff = v * 1.04;
-          } else if (v >= 180 && v < 240) {
-            vEff = v * 1.08;
-          } else if (v >= 240 && v < 300) {
-            vEff = v * 1.12;
-          } else if (v >= 300) {
-            vEff = v * 1.16;
-          }
-
-          sumWeightedEffSgv += vEff * finalWeight;
-        }
-
-        if (sumWeight === 0) return { adjustedGmi: 0, gmi: 0 };
-
-        const weightedMean = sumWeightedSgv / sumWeight;
-        const effWeightedMean = sumWeightedEffSgv / sumWeight;
-
-        // Base clinical formula conversions
-        const gmi = 3.31 + 0.02392 * weightedMean;
-        const adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
-        
+        const values = this._extractValues(glucoseData);
+        if (values.length === 0) return { adjustedGmi: 0, gmi: 0 };
+        const total = values.length;
+        const mean = values.reduce((acc, val) => acc + val, 0) / total;
+        const tar = values.filter(v => v > this.highThreshold).length / total * 100;
+        const vTar = values.filter(v => v > this.veryHighThreshold).length / total * 100;
+        const gmi = 3.31 + 0.02392 * mean;
+        const nonLowValues = values.filter(v => v >= this.lowThreshold);
+        const nonLowMean = nonLowValues.length ? nonLowValues.reduce((a, b) => a + b, 0) / nonLowValues.length : mean;
+        const base = 3.31 + 0.02392 * nonLowMean;
+        const adjustedGmi = base + tar * this.penaltyHigh + vTar * this.penaltyVeryHigh;
         return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
       }
     }
@@ -670,8 +624,9 @@
     const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
 
-    function toTimeMs(obj, field = 'dateString') {
-      const raw = obj?.[field] ?? obj?.dateString ?? obj?.created_at ?? obj?.date;
+    function toTimeMs(obj, field) {
+      const fieldName = field || 'dateString';
+      const raw = obj ? (obj[fieldName] ?? obj.dateString ?? obj.created_at ?? obj.date) : null;
       if (typeof raw === 'number') return raw;
       const ms = new Date(raw).getTime();
       return Number.isFinite(ms) ? ms : 0;
@@ -681,7 +636,7 @@
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
       const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
+      return y + '-' + m + '-' + d;
     }
 
     function getDayRangeByOffset(offsetDays) {
@@ -695,8 +650,8 @@
       end.setDate(end.getDate() + 1);
 
       return {
-        start,
-        end,
+        start: start,
+        end: end,
         key: dateKeyFromDate(start)
       };
     }
@@ -704,17 +659,17 @@
     async function fetchDeviceStatusForDay(offsetDays) {
       if (!state.url) return;
 
-      const { start, end, key } = getDayRangeByOffset(offsetDays);
+      const range = getDayRangeByOffset(offsetDays);
 
-      if (state.loadedDeviceStatusDays.has(key)) {
+      if (state.loadedDeviceStatusDays.has(range.key)) {
         return;
       }
 
-      safeSetText('last-update-time', `Loading ${key}`);
+      safeSetText('last-update-time', 'Loading ' + range.key);
 
       const deviceData = await fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
-        'find[created_at][$gte]': start.toISOString(),
-        'find[created_at][$lt]': end.toISOString(),
+        'find[created_at][$gte]': range.start.toISOString(),
+        'find[created_at][$lt]': range.end.toISOString(),
         count: 3000
       }));
 
@@ -722,13 +677,13 @@
         state.data.devicestatus = mergeByKey(
           state.data.devicestatus,
           deviceData,
-          d => d._id || d.created_at
-        ).sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+          function (d) { return d._id || d.created_at; }
+        ).sort(function (a, b) { return toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'); });
 
-        state.loadedDeviceStatusDays.add(key);
+        state.loadedDeviceStatusDays.add(range.key);
         hideError();
       } else {
-        showError(`Failed to load IOB for ${key}`);
+        showError('Failed to load IOB for ' + range.key);
       }
     }
 
@@ -744,8 +699,8 @@
 
     function mergeByKey(existing, incoming, keyFn) {
       const map = new Map();
-      existing.forEach(item => map.set(keyFn(item), item));
-      incoming.forEach(item => map.set(keyFn(item), item));
+      existing.forEach(function (item) { map.set(keyFn(item), item); });
+      incoming.forEach(function (item) { map.set(keyFn(item), item); });
       return Array.from(map.values());
     }
 
@@ -753,18 +708,21 @@
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - CONFIG.DATA_RETENTION_DAYS);
       const cutoffMs = cutoff.getTime();
-      state.data.entries = state.data.entries.filter(e => toTimeMs(e) >= cutoffMs);
-      state.data.treatments = state.data.treatments.filter(t => toTimeMs(t, 'created_at') >= cutoffMs);
-      state.data.devicestatus = state.data.devicestatus.filter(d => toTimeMs(d, 'created_at') >= cutoffMs);
+      state.data.entries = state.data.entries.filter(function (e) { return toTimeMs(e) >= cutoffMs; });
+      state.data.treatments = state.data.treatments.filter(function (t) { return toTimeMs(t, 'created_at') >= cutoffMs; });
+      state.data.devicestatus = state.data.devicestatus.filter(function (d) { return toTimeMs(d, 'created_at') >= cutoffMs; });
     }
 
-    function buildEndpoint(path, params = {}) {
+    function buildEndpoint(path, params) {
+      const searchParams = params || {};
       const usp = new URLSearchParams();
-      Object.entries(params).forEach(([k, v]) => {
+      Object.entries(searchParams).forEach(function (entry) {
+        const k = entry[0];
+        const v = entry[1];
         if (v !== undefined && v !== null && v !== '') usp.append(k, v);
       });
       const qs = usp.toString();
-      return qs ? `${path}?${qs}` : path;
+      return qs ? path + '?' + qs : path;
     }
 
     function appendReadToken(endpoint) {
@@ -772,7 +730,7 @@
       if (!token) return endpoint;
       if (/[?&]token=/.test(endpoint)) return endpoint;
       const separator = endpoint.includes('?') ? '&' : '?';
-      return `${endpoint}${separator}token=${encodeURIComponent(token)}`;
+      return endpoint + separator + 'token=' + encodeURIComponent(token);
     }
 
     async function fetchAPI(endpoint) {
@@ -782,12 +740,12 @@
       const authedEndpoint = appendReadToken(endpoint);
 
       try {
-        const response = await fetch(`${state.url}${authedEndpoint}`, {
-          headers,
+        const response = await fetch(state.url + authedEndpoint, {
+          headers: headers,
           cache: 'no-store'
         });
 
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
         return await response.json();
       } catch (error) {
         console.error('Fetch Error:', error);
@@ -796,11 +754,12 @@
       }
     }
 
-    async function fetchAllData(forceFull = false) {
+    async function fetchAllData(forceFull) {
+      const isForce = forceFull || false;
       if (!state.url || document.hidden) return;
 
       const now = new Date();
-      const shouldFullFetch = forceFull || !state.data.entries.length || !state.lastFetchAt;
+      const shouldFullFetch = isForce || !state.data.entries.length || !state.lastFetchAt;
 
       const entryFrom = new Date(now);
       if (shouldFullFetch) entryFrom.setDate(entryFrom.getDate() - CONFIG.FULL_LOOKBACK_DAYS);
@@ -817,11 +776,11 @@
           const profiles = await fetchAPI('/api/v1/profile.json');
           if (Array.isArray(profiles) && profiles.length > 0) {
             const defaultName = profiles[0].defaultProfile;
-            state.data.profile = profiles[0].store?.[defaultName] || null;
+            state.data.profile = profiles[0].store && profiles[0].store[defaultName] ? profiles[0].store[defaultName] : null;
           }
         }
 
-        const [entriesData, treatsData, deviceData] = await Promise.all([
+        const endpoints = [
           fetchAPI(buildEndpoint('/api/v1/entries.json', {
             'find[dateString][$gte]': entryFrom.toISOString(),
             count: 10000
@@ -834,35 +793,44 @@
             'find[created_at][$gte]': dsFrom.toISOString(),
             count: shouldFullFetch ? 1000 : 300
           }))
-        ]);
+        ];
+
+        const results = await Promise.all(endpoints);
+        const entriesData = results[0];
+        const treatsData = results[1];
+        const deviceData = results[2];
 
         if (Array.isArray(entriesData)) {
-          state.data.entries = mergeByKey(state.data.entries, entriesData, e => e._id || e.date || e.dateString)
-            .sort((a, b) => toTimeMs(a) - toTimeMs(b));
+          state.data.entries = mergeByKey(state.data.entries, entriesData, function (e) { return e._id || e.date || e.dateString; })
+            .sort(function (a, b) { return toTimeMs(a) - toTimeMs(b); });
         }
         if (Array.isArray(treatsData)) {
-          state.data.treatments = mergeByKey(state.data.treatments, treatsData, t => t._id || `${t.created_at}-${t.eventType || ''}-${t.insulin || ''}-${t.carbs || ''}`)
-            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+          state.data.treatments = mergeByKey(state.data.treatments, treatsData, function (t) {
+            return t._id || (t.created_at + '-' + (t.eventType || '') + '-' + (t.insulin || '') + '-' + (t.carbs || ''));
+          }).sort(function (a, b) { return toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'); });
         }
         if (Array.isArray(deviceData)) {
-          state.data.devicestatus = mergeByKey(state.data.devicestatus, deviceData, d => d._id || d.created_at)
-            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+          state.data.devicestatus = mergeByKey(state.data.devicestatus, deviceData, function (d) { return d._id || d.created_at; })
+            .sort(function (a, b) { return toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'); });
         }
 
         pruneOldData();
         state.lastFetchAt = now;
         hideError();
         updateUI({ dataFetched: true });
-        safeSetText('sync-time', `Sync: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
+        safeSetText('sync-time', 'Sync: ' + String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0') + ':' + String(now.getSeconds()).padStart(2, '0'));
       } catch (error) {
         console.error(error);
         showError('Data update failed.');
       }
     }
 
-    const getDirectionArrow = (dir) => ({
-      NONE: '⇼', DoubleUp: '⇈', SingleUp: '↑', FortyFiveUp: '↗', Flat: '→', FortyFiveDown: '↘', SingleDown: '↓', DoubleDown: '⇊'
-    }[dir] || '');
+    function getDirectionArrow(dir) {
+      const arrows = {
+        NONE: '⇼', DoubleUp: '⇈', SingleUp: '↑', FortyFiveUp: '↗', Flat: '→', FortyFiveDown: '↘', SingleDown: '↓', DoubleDown: '⇊'
+      };
+      return arrows[dir] || '';
+    }
 
     function getBgColorClass(sgv) {
       if (sgv < 55) return 'text-red-500';
@@ -881,37 +849,35 @@
     function getIobFromDeviceStatus(ds) {
       if (!ds) return undefined;
       const candidates = [
-        ds.loop?.iob?.iob,
-        ds.pump?.iob?.iob,
-        typeof ds.pump?.iob === 'number' ? ds.pump.iob : undefined,
-        ds.openaps?.iob?.iob,
+        ds.loop && ds.loop.iob ? ds.loop.iob.iob : undefined,
+        ds.pump && ds.pump.iob ? ds.pump.iob.iob : undefined,
+        ds.pump && typeof ds.pump.iob === 'number' ? ds.pump.iob : undefined,
+        ds.openaps && ds.openaps.iob ? ds.openaps.iob.iob : undefined,
         typeof ds.iob === 'number' ? ds.iob : undefined
       ];
-      return candidates.find(v => Number.isFinite(Number(v)));
+      return candidates.find(function (v) { return Number.isFinite(Number(v)); });
     }
 
     function getCobFromDeviceStatus(ds) {
       if (!ds) return undefined;
       const candidates = [
-        ds.loop?.cob?.cob,
-        ds.pump?.cob?.cob,
-        typeof ds.pump?.cob === 'number' ? ds.pump.cob : undefined,
+        ds.loop && ds.loop.cob ? ds.loop.cob.cob : undefined,
+        ds.pump && ds.pump.cob ? ds.pump.cob.cob : undefined,
+        ds.pump && typeof ds.pump.cob === 'number' ? ds.pump.cob : undefined,
         typeof ds.cob === 'number' ? ds.cob : undefined
       ];
-      return candidates.find(v => Number.isFinite(Number(v)));
+      return candidates.find(function (v) { return Number.isFinite(Number(v)); });
     }
 
-    // --- STREAMING_CHUNK:Configuring Chart.js properties and annotations... ---
-    // Refined automatic correction (CB) vs manual bolus mapping
     function isLikelyCB(t) {
       const insulin = Number(t.insulin || 0);
       if (!Number.isFinite(insulin) || insulin <= 0) return false;
 
-      // automatic is highly prioritised in Hybrid Closed Loop environments
+      // 1. If explicit automatic flag exists, use it to decide correction (CB) vs manual bolus
       if (t.automatic === true) return true;
       if (t.automatic === false) return false;
 
-      // Fallbacks mapping when automated tags are missing
+      // 2. Fallbacks when automated flags are completely missing
       const type = (t.eventType || '').toLowerCase();
       const enteredBy = (t.enteredBy || '').toLowerCase();
       const carbs = Number(t.carbs || 0);
@@ -931,7 +897,8 @@
       return false;
     }
 
-    function updateUI({ dataFetched = false } = {}) {
+    function updateUI(options) {
+      const dataFetched = options ? (options.dataFetched || false) : false;
       const entries = state.data.entries;
       if (!entries.length) return;
 
@@ -951,12 +918,12 @@
         const prev = entries[entries.length - 2];
         const prevBg = Number(prev.sgv ?? prev.glucose ?? prev.value);
         const delta = latestBg - prevBg;
-        safeSetText('bg-delta', Number.isFinite(delta) ? `${delta >= 0 ? '+' : ''}${delta} mg/dL` : '--');
+        safeSetText('bg-delta', Number.isFinite(delta) ? (delta >= 0 ? '+' : '') + delta + ' mg/dL' : '--');
       }
 
       const latestMs = toTimeMs(latest);
       const timeDiff = latestMs ? Math.floor((Date.now() - latestMs) / 60000) : null;
-      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : `${timeDiff} min ago`);
+      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : timeDiff + ' min ago');
 
       const dsList = state.data.devicestatus;
       const ds = dsList.length ? dsList[dsList.length - 1] : null;
@@ -966,15 +933,15 @@
       safeSetText('current-cob', Number.isFinite(Number(cobVal)) ? Number(cobVal).toFixed(0) : '--');
 
       let res = '--';
-      const resVal = ds?.pump?.reservoir ?? ds?.loop?.pump?.reservoir;
-      if (Number.isFinite(Number(resVal))) res = `${Math.round(Number(resVal))}U`;
+      const resVal = ds && ds.pump && ds.pump.reservoir ? ds.pump.reservoir : (ds && ds.loop && ds.loop.pump ? ds.loop.pump.reservoir : null);
+      if (Number.isFinite(Number(resVal))) res = Math.round(Number(resVal)) + 'U';
       safeSetText('current-res', res);
 
-      const siteChanges = state.data.treatments.filter(t => t.eventType === 'Site Change');
+      const siteChanges = state.data.treatments.filter(function (t) { return t.eventType === 'Site Change'; });
       if (siteChanges.length) {
         const lastChange = toTimeMs(siteChanges[siteChanges.length - 1], 'created_at');
         const hoursSince = (Date.now() - lastChange) / 36e5;
-        safeSetText('current-cage', hoursSince < 24 ? `${hoursSince.toFixed(1)}h` : `${(hoursSince / 24).toFixed(1)}d`);
+        safeSetText('current-cage', hoursSince < 24 ? hoursSince.toFixed(1) + 'h' : (hoursSince / 24).toFixed(1) + 'd');
       } else {
         safeSetText('current-cage', '--');
       }
@@ -1001,12 +968,12 @@
       const start = startDate.getTime();
       const end = endDate.getTime();
 
-      const periodEntries = state.data.entries.filter(e => {
+      const periodEntries = state.data.entries.filter(function (e) {
         const t = toTimeMs(e);
         return t >= start && t < end;
       });
 
-      const periodTreats = state.data.treatments.filter(t => {
+      const periodTreats = state.data.treatments.filter(function (t) {
         const ms = toTimeMs(t, 'created_at');
         return ms >= start && ms < end;
       });
@@ -1015,31 +982,31 @@
       let tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
 
       const values = periodEntries
-        .map(e => Number(e.sgv ?? e.glucose ?? e.value))
+        .map(function (e) { return Number(e.sgv ?? e.glucose ?? e.value); })
         .filter(Number.isFinite);
 
       const total = values.length;
 
       if (total) {
-        tbr54 = values.filter(v => v < 54).length / total * 100;
-        tbr70 = values.filter(v => v >= 54 && v < 70).length / total * 100;
+        tbr54 = values.filter(function (v) { return v < 54; }).length / total * 100;
+        tbr70 = values.filter(function (v) { return v >= 54 && v < 70; }).length / total * 100;
         tbr = tbr54 + tbr70;
 
-        tir = values.filter(v => v >= 70 && v <= 180).length / total * 100;
-        tar = values.filter(v => v > 180).length / total * 100;
-        tar250 = values.filter(v => v > 250).length / total * 100;
+        tir = values.filter(function (v) { return v >= 70 && v <= 180; }).length / total * 100;
+        tar = values.filter(function (v) { return v > 180; }).length / total * 100;
+        tar250 = values.filter(function (v) { return v > 250; }).length / total * 100;
 
         tirScore = tir - 5 * tbr54 - 2 * tbr70 - 1 * tar250;
         tirScore = Math.max(0, Math.min(100, tirScore));
 
-        mean = values.reduce((a, b) => a + b, 0) / total;
-        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
+        mean = values.reduce(function (a, b) { return a + b; }, 0) / total;
+        const sd = Math.sqrt(values.reduce(function (a, b) { return a + Math.pow(b - mean, 2); }, 0) / total);
         cv = mean > 0 ? sd / mean * 100 : 0;
       }
 
       let totalCarbs = 0, bolus = 0, cb = 0;
 
-      periodTreats.forEach(t => {
+      periodTreats.forEach(function (t) {
         const carbs = Number(t.carbs || 0);
         if (Number.isFinite(carbs) && carbs > 0) totalCarbs += carbs;
 
@@ -1049,9 +1016,7 @@
         const type = (t.eventType || '').toLowerCase();
         if (type.includes('temp basal') || type.includes('profile')) return;
 
-        const isCB = isLikelyCB(t);
-
-        if (isCB) cb += insulin;
+        if (isLikelyCB(t)) cb += insulin;
         else bolus += insulin;
       });
 
@@ -1063,29 +1028,29 @@
       const a1cResult = a1cCalculator.analyze(periodEntries);
 
       return {
-        tbr,
-        tir,
-        tar,
-        tbr54,
-        tbr70,
-        tar250,
-        tirScore,
+        tbr: tbr,
+        tir: tir,
+        tar: tar,
+        tbr54: tbr54,
+        tbr70: tbr70,
+        tar250: tar250,
+        tirScore: tirScore,
         carbs: totalCarbs,
-        bolus,
-        cb,
-        basal,
-        tdd,
-        mean,
-        cv,
-        crBolus,
-        crTotal,
+        bolus: bolus,
+        cb: cb,
+        basal: basal,
+        tdd: tdd,
+        mean: mean,
+        cv: cv,
+        crBolus: crBolus,
+        crTotal: crTotal,
         gmi: a1cResult.gmi,
         adjustedGmi: a1cResult.adjustedGmi
       };
     }
 
     function getProfileBasalRate(date) {
-      const basal = state.data.profile?.basal;
+      const basal = state.data.profile && state.data.profile.basal ? state.data.profile.basal : null;
       if (!Array.isArray(basal) || !basal.length) return 0;
       const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
       let rate = Number(basal[0].value || 0);
@@ -1105,16 +1070,19 @@
     }
 
     function calculateIntegralBasal(startDate, endDate, periodTreats) {
-      if (!state.data.profile?.basal) return 0;
+      if (!state.data.profile || !state.data.profile.basal) return 0;
       let total = 0;
-      const tempBasals = periodTreats.filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null);
+      const tempBasals = periodTreats.filter(function (t) {
+        return t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null;
+      });
       let current = new Date(startDate);
       const end = new Date(Math.min(endDate.getTime(), Date.now()));
 
       while (current < end) {
         const timeMs = current.getTime();
         let rate = getProfileBasalRate(current);
-        for (const tb of tempBasals) {
+        for (let i = 0; i < tempBasals.length; i++) {
+          const tb = tempBasals[i];
           const tbStart = toTimeMs(tb, 'created_at');
           const tbEnd = tbStart + Number(tb.duration) * 60000;
           if (timeMs >= tbStart && timeMs < tbEnd) {
@@ -1129,45 +1097,46 @@
     }
 
     function renderStats(prefix, stats, days) {
-      safeSetStyle(`${prefix}-tbr`, 'height', `${Math.min(100, Math.max(0, stats.tbr))}%`);
-      safeSetStyle(`${prefix}-tir`, 'height', `${Math.min(100, Math.max(0, stats.tir))}%`);
-      safeSetStyle(`${prefix}-tar`, 'height', `${Math.min(100, Math.max(0, stats.tar))}%`);
-      safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
-      safeSetText(`${prefix}-tir-score`, Math.round(stats.tirScore));
+      safeSetStyle(prefix + '-tbr', 'height', Math.min(100, Math.max(0, stats.tbr)) + '%');
+      safeSetStyle(prefix + '-tir', 'height', Math.min(100, Math.max(0, stats.tir)) + '%');
+      safeSetStyle(prefix + '-tar', 'height', Math.min(100, Math.max(0, stats.tar)) + '%');
+      safeSetText(prefix + '-tir-val', Math.round(stats.tir) + '%');
+      safeSetText(prefix + '-tir-score', String(Math.round(stats.tirScore)));
 
       const tdd = stats.tdd / days;
       const basal = stats.basal / days;
       const bolus = stats.bolus / days;
       const cb = stats.cb / days;
 
-      safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
-      safeSetText(`${prefix}-basal`, basal.toFixed(1));
-      safeSetText(`${prefix}-cb`, cb.toFixed(1));
-      safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
-      safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
-      safeSetText(`${prefix}-mean`, stats.mean > 0 ? Math.round(stats.mean) : 0);
-      safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
-      safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
-      safeSetText(`${prefix}-gmi`, stats.gmi.toFixed(1));
-      safeSetText(`${prefix}-ea1c`, stats.adjustedGmi.toFixed(1));
+      safeSetText(prefix + '-tdd', tdd.toFixed(1));
+      safeSetText(prefix + '-basal', basal.toFixed(1));
+      safeSetText(prefix + '-cb', cb.toFixed(1));
+      safeSetText(prefix + '-bolus', bolus.toFixed(1));
+      safeSetText(prefix + '-carbs', String(Math.round(stats.carbs / days)));
+      safeSetText(prefix + '-mean', stats.mean > 0 ? String(Math.round(stats.mean)) : '0');
+      safeSetText(prefix + '-cr-bolus', stats.crBolus.toFixed(1));
+      safeSetText(prefix + '-cr-total', stats.crTotal.toFixed(1));
+      safeSetText(prefix + '-gmi', stats.gmi.toFixed(1));
+      safeSetText(prefix + '-ea1c', stats.adjustedGmi.toFixed(1));
 
       if (tdd > 0) {
-        safeSetStyle(`${prefix}-basal-bar`, 'width', `${basal / tdd * 100}%`);
-        safeSetStyle(`${prefix}-cb-bar`, 'width', `${cb / tdd * 100}%`);
-        safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
+        safeSetStyle(prefix + '-basal-bar', 'width', (basal / tdd * 100) + '%');
+        safeSetStyle(prefix + '-cb-bar', 'width', (cb / tdd * 100) + '%');
+        safeSetStyle(prefix + '-bolus-bar', 'width', (bolus / tdd * 100) + '%');
       } else {
-        safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
-        safeSetStyle(`${prefix}-cb-bar`, 'width', '0%');
-        safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
+        safeSetStyle(prefix + '-basal-bar', 'width', '0%');
+        safeSetStyle(prefix + '-cb-bar', 'width', '0%');
+        safeSetStyle(prefix + '-bolus-bar', 'width', '0%');
       }
 
-      safeSetText(`${prefix}-cv-agp`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+      safeSetText(prefix + '-cv-agp', Number.isFinite(stats.cv) ? String(Math.round(stats.cv)) : '--');
     }
 
-    function makeTargetAnnotation(alpha = 0.08) {
+    function makeTargetAnnotation(alpha) {
+      const a = alpha || 0.08;
       return {
         type: 'box', yMin: 70, yMax: 180,
-        backgroundColor: `rgba(74, 222, 128, ${alpha})`,
+        backgroundColor: 'rgba(74, 222, 128, ' + a + ')',
         borderColor: 'rgba(74, 222, 128, 0.35)',
         borderWidth: 1,
         borderDash: [5, 5],
@@ -1175,7 +1144,6 @@
       };
     }
 
-    // --- STREAMING_CHUNK:Implementing navigation systems and idle dimmers... ---
     function getMainChartPayload() {
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
@@ -1195,8 +1163,28 @@
 
       if (state.offsetDays === 0) {
         const nowMs = Date.now();
+        // Shift beginning range backward based on selected view hours
         targetStart = new Date(nowMs - state.timeRangeHours * 60 * 60 * 1000);
-        initialDisplayMax = nowMs;
+
+        // Calculate prediction bounds beautifully for current day
+        let predMaxMs = nowMs + 3 * 60 * 60 * 1000; // Base: Future 3 hours
+        const dsLatest = state.data.devicestatus.length ? state.data.devicestatus[state.data.devicestatus.length - 1] : null;
+        if (dsLatest) {
+          if (dsLatest.loop && dsLatest.loop.predicted && Array.isArray(dsLatest.loop.predicted.values) && dsLatest.loop.predicted.startDate) {
+            const pStart = new Date(dsLatest.loop.predicted.startDate).getTime();
+            const pLen = dsLatest.loop.predicted.values.length;
+            const pEnd = pStart + pLen * 5 * 60000;
+            if (pEnd > predMaxMs) predMaxMs = pEnd;
+          } else if (dsLatest.openaps && dsLatest.openaps.suggested && dsLatest.openaps.suggested.predBGs) {
+            const pBGs = dsLatest.openaps.suggested.predBGs.aA || dsLatest.openaps.suggested.predBGs.UAM || dsLatest.openaps.suggested.predBGs.IOB;
+            if (Array.isArray(pBGs)) {
+              const pStart = toTimeMs(dsLatest, 'created_at');
+              const pEnd = pStart + pBGs.length * 5 * 60000;
+              if (pEnd > predMaxMs) predMaxMs = pEnd;
+            }
+          }
+        }
+        initialDisplayMax = predMaxMs;
       } else {
         initialDisplayMax = Math.min(
           targetStart.getTime() + state.timeRangeHours * 60 * 60 * 1000,
@@ -1205,23 +1193,23 @@
       }
       const panMaxEnd = new Date(timelineEnd);
 
-      const plotEntries = state.data.entries.filter(e => {
+      const plotEntries = state.data.entries.filter(function (e) {
         const d = toTimeMs(e);
         return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
       });
-      const plotTreats = state.data.treatments.filter(t => {
+      const plotTreats = state.data.treatments.filter(function (t) {
         const d = toTimeMs(t, 'created_at');
         return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
       });
-      const plotDeviceStatus = state.data.devicestatus.filter(d => {
+      const plotDeviceStatus = state.data.devicestatus.filter(function (d) {
         const dt = toTimeMs(d, 'created_at');
         return dt >= timelineStart.getTime() && dt <= panMaxEnd.getTime();
       });
 
       const scatterData = plotEntries
-        .map(e => ({ x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) }))
-        .filter(d => Number.isFinite(d.y));
-      const yAxisMax = Math.max(250, ...scatterData.map(d => d.y)) + 30;
+        .map(function (e) { return { x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) }; })
+        .filter(function (d) { return Number.isFinite(d.y); });
+      const yAxisMax = Math.max(250, ...scatterData.map(function (d) { return d.y; })) + 30;
       const yAxisMin = 40;
 
       const annotations = {
@@ -1232,20 +1220,20 @@
       for (let i = 0; i <= 8; i++) {
         const day = new Date(timelineStart);
         day.setDate(day.getDate() + i);
-        annotations[`midnight_${i}`] = {
+        annotations['midnight_' + i] = {
           type: 'line', xMin: day.getTime(), xMax: day.getTime(),
           borderColor: 'rgba(148, 163, 184, 0.35)', borderWidth: 1, borderDash: [4, 4],
           label: { display: false }
         };
       }
 
-      plotTreats.forEach((t, i) => {
+      plotTreats.forEach(function (t, i) {
         const time = toTimeMs(t, 'created_at');
         const carbs = Number(t.carbs || 0);
         const insulin = Number(t.insulin || 0);
         if (carbs > 0) {
           const p = Math.max(3, Math.sqrt(carbs) * 1.5);
-          annotations[`carb_${i}`] = { type: 'label', xValue: time, yValue: yAxisMax - 25, backgroundColor: 'rgba(234,179,8,0.7)', color: '#fff', content: `${carbs}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 } };
+          annotations['carb_' + i] = { type: 'label', xValue: time, yValue: yAxisMax - 25, backgroundColor: 'rgba(234,179,8,0.7)', color: '#fff', content: String(carbs), font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 } };
         }
         if (insulin > 0) {
           const type = (t.eventType || '').toLowerCase();
@@ -1253,9 +1241,9 @@
           const isCB = isLikelyCB(t);
           const color = isCB ? 'rgba(168, 85, 247, 0.9)' : 'rgba(6, 182, 212, 0.85)';
           const p = Math.max(3, Math.sqrt(insulin) * 3);
-          annotations[`ins_${i}`] = {
+          annotations['ins_' + i] = {
             type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff',
-            content: `${insulin}`,
+            content: String(insulin),
             font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 }
           };
         }
@@ -1264,13 +1252,13 @@
       const basalData = [];
       const profileBasalData = [];
       let maxBasalVal = 1;
-      if (state.data.profile?.basal) {
+      if (state.data.profile && state.data.profile.basal) {
         const iter = new Date(timelineStart); iter.setMinutes(0, 0, 0);
         while (iter <= panMaxEnd) {
           const tMs = iter.getTime();
           const profRate = getProfileBasalRate(iter);
           let actualRate = profRate;
-          const tempBasal = plotTreats.find(t => {
+          const tempBasal = plotTreats.find(function (t) {
             if (t.eventType !== 'Temp Basal' || Number(t.duration) <= 0 || getTempBasalAbsolute(t) === null) return false;
             const ts = toTimeMs(t, 'created_at');
             const te = ts + Number(t.duration) * 60000;
@@ -1286,7 +1274,7 @@
 
       const iobData = [];
       let maxIobVal = 1;
-      plotDeviceStatus.forEach(ds => {
+      plotDeviceStatus.forEach(function (ds) {
         const iobVal = Number(getIobFromDeviceStatus(ds));
         if (Number.isFinite(iobVal)) {
           iobData.push({ x: toTimeMs(ds, 'created_at'), y: iobVal });
@@ -1297,19 +1285,37 @@
       const predictionData = [];
       const dsLatest = state.data.devicestatus.length ? state.data.devicestatus[state.data.devicestatus.length - 1] : null;
       if (state.offsetDays === 0 && dsLatest) {
-        if (Array.isArray(dsLatest.loop?.predicted?.values) && dsLatest.loop?.predicted?.startDate) {
+        if (dsLatest.loop && dsLatest.loop.predicted && Array.isArray(dsLatest.loop.predicted.values) && dsLatest.loop.predicted.startDate) {
           let pTime = new Date(dsLatest.loop.predicted.startDate).getTime();
-          dsLatest.loop.predicted.values.forEach(bg => { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
-        } else if (dsLatest.openaps?.suggested?.predBGs) {
+          dsLatest.loop.predicted.values.forEach(function (bg) { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
+        } else if (dsLatest.openaps && dsLatest.openaps.suggested && dsLatest.openaps.suggested.predBGs) {
           const pBGs = dsLatest.openaps.suggested.predBGs.aA || dsLatest.openaps.suggested.predBGs.UAM || dsLatest.openaps.suggested.predBGs.IOB;
           if (Array.isArray(pBGs)) {
             let pTime = toTimeMs(dsLatest, 'created_at');
-            pBGs.forEach(bg => { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
+            pBGs.forEach(function (bg) { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
           }
         }
       }
 
-      return { targetStart, initialDisplayMax, timelineStart, panMaxEnd, selectedDayStart, selectedDayEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
+      return {
+        targetStart: targetStart,
+        initialDisplayMax: initialDisplayMax,
+        timelineStart: timelineStart,
+        panMaxEnd: panMaxEnd,
+        selectedDayStart: selectedDayStart,
+        selectedDayEnd: selectedDayEnd,
+        scatterData: scatterData,
+        predictionData: predictionData,
+        profileBasalData: profileBasalData,
+        basalData: basalData,
+        iobData: iobData,
+        annotations: annotations,
+        yAxisMin: yAxisMin,
+        yAxisMax: yAxisMax,
+        maxBasalVal: maxBasalVal,
+        maxIobVal: maxIobVal,
+        plotTreats: plotTreats
+      };
     }
 
     function getOrCreateTooltip(chart) {
@@ -1323,38 +1329,56 @@
     }
 
     function makeExternalTooltip(plotTreats) {
-      return (context) => {
-        const { chart, tooltip } = context;
+      return function (context) {
+        const chart = context.chart;
+        const tooltip = context.tooltip;
         const tooltipEl = getOrCreateTooltip(chart);
-        if (tooltip.opacity === 0) { tooltipEl.style.opacity = 0; return; }
-        if (tooltip.dataPoints?.length) {
+        if (tooltip.opacity === 0) { tooltipEl.style.opacity = '0'; return; }
+        if (tooltip.dataPoints && tooltip.dataPoints.length) {
           const hoverTime = tooltip.dataPoints[0].parsed.x;
           const d = new Date(hoverTime);
-          const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-          let html = `<div style="font-size:12px;color:#cbd5e1;font-weight:bold;margin-bottom:4px;border-bottom:1px solid rgba(71,85,105,0.5);padding-bottom:4px;">${timeStr}</div>`;
-          const bgValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'BG')?.raw.y;
-          if (bgValue !== undefined) html += `<div style="font-size:16px;font-weight:900;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">BG:</span> ${bgValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
-          const predValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Predicted')?.raw.y;
-          if (predValue !== undefined && bgValue === undefined) html += `<div style="font-size:15px;font-weight:bold;color:#c084fc;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">Pred:</span> ${predValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
-          const basalValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Basal')?.raw.y;
-          if (basalValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ${basalValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U/h</span></div>`;
-          const iobValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'IOB')?.raw.y;
-          if (iobValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ${iobValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U</span></div>`;
-          const treats = plotTreats.filter(t => Math.abs(toTimeMs(t, 'created_at') - hoverTime) < 3 * 60000);
+          const timeStr = (d.getMonth() + 1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+          let html = '<div style="font-size:12px;color:#cbd5e1;font-weight:bold;margin-bottom:4px;border-bottom:1px solid rgba(71,85,105,0.5);padding-bottom:4px;">' + timeStr + '</div>';
+          
+          const bgDp = tooltip.dataPoints.find(function (dp) { return dp.dataset.label === 'BG'; });
+          const bgValue = bgDp ? bgDp.raw.y : undefined;
+          if (bgValue !== undefined) {
+            html += '<div style="font-size:16px;font-weight:900;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">BG:</span> ' + bgValue + ' <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>';
+          }
+          
+          const predDp = tooltip.dataPoints.find(function (dp) { return dp.dataset.label === 'Predicted'; });
+          const predValue = predDp ? predDp.raw.y : undefined;
+          if (predValue !== undefined && bgValue === undefined) {
+            html += '<div style="font-size:15px;font-weight:bold;color:#c084fc;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">Pred:</span> ' + predValue + ' <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>';
+          }
+          
+          const basalDp = tooltip.dataPoints.find(function (dp) { return dp.dataset.label === 'Basal'; });
+          const basalValue = basalDp ? basalDp.raw.y : undefined;
+          if (basalValue !== undefined) {
+            html += '<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ' + basalValue.toFixed(2) + ' <span style="font-size:10px;font-weight:normal;">U/h</span></div>';
+          }
+          
+          const iobDp = tooltip.dataPoints.find(function (dp) { return dp.dataset.label === 'IOB'; });
+          const iobValue = iobDp ? iobDp.raw.y : undefined;
+          if (iobValue !== undefined) {
+            html += '<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ' + iobValue.toFixed(2) + ' <span style="font-size:10px;font-weight:normal;">U</span></div>';
+          }
+          
+          const treats = plotTreats.filter(function (t) { return Math.abs(toTimeMs(t, 'created_at') - hoverTime) < 3 * 60000; });
           if (treats.length) {
-            html += `<div style="margin-top:4px;padding-top:4px;border-top:1px dashed rgba(71,85,105,0.5);">`;
-            treats.forEach(t => {
-              if (Number(t.carbs) > 0) html += `<div style="font-size:14px;color:#facc15;font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">Carbs:</span> ${t.carbs}g</div>`;
+            html += '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed rgba(71,85,105,0.5);">';
+            treats.forEach(function (t) {
+              if (Number(t.carbs) > 0) html += '<div style="font-size:14px;color:#facc15;font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">Carbs:</span> ' + t.carbs + 'g</div>';
               if (Number(t.insulin) > 0 && !(t.eventType || '').toLowerCase().includes('temp')) {
                 const isCB = isLikelyCB(t);
-                html += `<div style="font-size:14px;color:${isCB ? '#d8b4fe' : '#67e8f9'};font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">${isCB ? 'CB' : 'Bolus'}:</span> ${t.insulin}U</div>`;
+                html += '<div style="font-size:14px;color:' + (isCB ? '#d8b4fe' : '#67e8f9') + ';font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">' + (isCB ? 'CB' : 'Bolus') + ':</span> ' + t.insulin + 'U</div>';
               }
             });
-            html += `</div>`;
+            html += '</div>';
           }
           tooltipEl.innerHTML = html;
         }
-        tooltipEl.style.opacity = 1;
+        tooltipEl.style.opacity = '1';
         const tooltipWidth = tooltipEl.offsetWidth;
         const tooltipHeight = tooltipEl.offsetHeight;
         let left = tooltip.caretX - tooltipWidth / 2;
@@ -1363,19 +1387,20 @@
         if (top + tooltipHeight > chart.height - 5) top = chart.height - tooltipHeight - 5;
         if (left < 5) left = 5;
         else if (left + tooltipWidth > chart.width - 5) left = chart.width - tooltipWidth - 5;
-        tooltipEl.style.left = `${left}px`;
-        tooltipEl.style.top = `${top}px`;
+        tooltipEl.style.left = left + 'px';
+        tooltipEl.style.top = top + 'px';
       };
     }
 
-    function updateChart({ force = false } = {}) {
+    function updateChart(options) {
+      const isForce = options ? (options.force || false) : false;
       if (!state.data.entries.length) return;
       const ctxEl = document.getElementById('bgChart');
       if (!ctxEl) return;
 
       const payload = getMainChartPayload();
       const signature = [state.offsetDays, state.timeRangeHours, state.data.entries.length, state.data.treatments.length, state.data.devicestatus.length].join('|');
-      if (!force && chartInstance && signature === state.lastMainChartSignature) return;
+      if (!isForce && chartInstance && signature === state.lastMainChartSignature) return;
       state.lastMainChartSignature = signature;
 
       Chart.defaults.color = '#64748b';
@@ -1399,7 +1424,11 @@
               legend: { display: false },
               tooltip: { enabled: false, external: makeExternalTooltip(payload.plotTreats) },
               annotation: { annotations: payload.annotations },
-              zoom: { pan: { enabled: true, mode: 'x', onPanComplete: () => syncVisibleDayFromChart() }, zoom: { wheel: { enabled: false }, pinch: { enabled: false }, mode: 'x', onZoomComplete: () => syncVisibleDayFromChart() }, limits: { x: { min: payload.timelineStart.getTime(), max: payload.panMaxEnd.getTime() } } }
+              zoom: {
+                pan: { enabled: true, mode: 'x', onPanComplete: syncVisibleDayFromChart },
+                zoom: { wheel: { enabled: false }, pinch: { enabled: false }, mode: 'x', onZoomComplete: syncVisibleDayFromChart },
+                limits: { x: { min: payload.timelineStart.getTime(), max: payload.panMaxEnd.getTime() } }
+              }
             },
             layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
             scales: {
@@ -1413,7 +1442,7 @@
       }
 
       chartInstance.data.datasets = [
-        { label: 'BG', data: payload.scatterData, backgroundColor: ctx => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; }, pointRadius: CONFIG.CHART_POINT_RADIUS, order: 5, yAxisID: 'y' },
+        { label: 'BG', data: payload.scatterData, backgroundColor: function (ctx) { const y = ctx.raw && ctx.raw.y ? ctx.raw.y : 0; return y < 70 ? '#f87171' : (y > 180 ? '#facc15' : '#4ade80'); }, pointRadius: CONFIG.CHART_POINT_RADIUS, order: 5, yAxisID: 'y' },
         { type: 'line', label: 'Predicted', data: payload.predictionData, borderColor: 'rgba(192,132,252,0.9)', borderDash: [5, 5], borderWidth: 2.5, fill: false, pointRadius: 0, order: 4, yAxisID: 'y', tension: 0.4 },
         { type: 'line', label: 'Profile', data: payload.profileBasalData, borderColor: 'rgba(59,130,246,0.4)', borderDash: [3, 3], borderWidth: 1.5, fill: false, stepped: true, pointRadius: 0, order: 3, yAxisID: 'yBasal' },
         { type: 'line', label: 'Basal', data: payload.basalData, borderColor: 'rgba(59,130,246,0.8)', backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, fill: true, stepped: true, pointRadius: 0, order: 2, yAxisID: 'yBasal' },
@@ -1428,32 +1457,32 @@
       chartInstance.options.scales.x.max = payload.initialDisplayMax;
       chartInstance.options.scales.y.max = payload.yAxisMax;
       chartInstance.options.scales.yBasal.max = yBasalMax;
-      chartInstance.options.scales.yBasal.ticks.callback = v => v <= payload.maxBasalVal ? v : '';
+      chartInstance.options.scales.yBasal.ticks.callback = function (v) { return v <= payload.maxBasalVal ? v : ''; };
       chartInstance.options.scales.yIob.max = yIobMax;
-      chartInstance.options.scales.yIob.ticks.callback = v => v <= payload.maxIobVal ? v : '';
+      chartInstance.options.scales.yIob.ticks.callback = function (v) { return v <= payload.maxIobVal ? v : ''; };
       chartInstance.update('none');
       syncVisibleDayFromChart();
     }
 
     function addTargetTicks(axis) {
-      if (!axis.ticks.find(t => t.value === 70)) axis.ticks.push({ value: 70 });
-      if (!axis.ticks.find(t => t.value === 180)) axis.ticks.push({ value: 180 });
-      axis.ticks.sort((a, b) => a.value - b.value);
+      if (!axis.ticks.find(function (t) { return t.value === 70; })) axis.ticks.push({ value: 70 });
+      if (!axis.ticks.find(function (t) { return t.value === 180; })) axis.ticks.push({ value: 180 });
+      axis.ticks.sort(function (a, b) { return a.value - b.value; });
     }
 
     function targetTickStyle() {
       return {
-        font: ctx => (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? { size: 12, weight: '900' } : { size: 11 },
-        color: ctx => (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? '#4ade80' : '#64748b'
+        font: function (ctx) { return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? { size: 12, weight: '900' } : { size: 11 }; },
+        color: function (ctx) { return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? '#4ade80' : '#64748b'; }
       };
     }
 
     function buildAgpData() {
       const now = new Date();
       const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const targetEntries = state.data.entries.filter(e => toTimeMs(e) >= sevenDaysAgo.getTime());
-      const slots = Array.from({ length: 48 }, () => []);
-      targetEntries.forEach(e => {
+      const targetEntries = state.data.entries.filter(function (e) { return toTimeMs(e) >= sevenDaysAgo.getTime(); });
+      const slots = Array.from({ length: 48 }, function () { return []; });
+      targetEntries.forEach(function (e) {
         const d = new Date(toTimeMs(e));
         const slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
         const value = Number(e.sgv ?? e.glucose ?? e.value);
@@ -1463,13 +1492,13 @@
       const p = { p10: [], p25: [], p50: [], p75: [], p90: [], times: [] };
       for (let i = 0; i <= 48; i++) {
         const idx = i === 48 ? 0 : i;
-        const data = [...slots[idx]].sort((a, b) => a - b);
+        const data = [...slots[idx]].sort(function (a, b) { return a - b; });
         p.times.push(i * 0.5);
         if (!data.length) {
           p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null);
           continue;
         }
-        const getP = q => {
+        const getP = function (q) {
           const pos = (data.length - 1) * q;
           const base = Math.floor(pos);
           const rest = pos - base;
@@ -1480,11 +1509,11 @@
 
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const todayData = state.data.entries
-        .filter(e => toTimeMs(e) >= todayStart.getTime())
-        .map(e => { const d = new Date(toTimeMs(e)); return { x: d.getHours() + d.getMinutes() / 60, y: Number(e.sgv ?? e.glucose ?? e.value) }; })
-        .filter(d => Number.isFinite(d.y));
+        .filter(function (e) { return toTimeMs(e) >= todayStart.getTime(); })
+        .map(function (e) { const d = new Date(toTimeMs(e)); return { x: d.getHours() + d.getMinutes() / 60, y: Number(e.sgv ?? e.glucose ?? e.value) }; })
+        .filter(function (d) { return Number.isFinite(d.y); });
 
-      return { percentiles: p, todayData };
+      return { percentiles: p, todayData: todayData };
     }
 
     function baseAgpOptions() {
@@ -1512,7 +1541,7 @@
             max: 24,
             ticks: {
               stepSize: 3,
-              callback: v => `${v}:00`,
+              callback: function (v) { return v + ':00'; },
               font: { size: 10, weight: 'bold' }
             },
             grid: { color: 'rgba(71,85,105,0.4)' }
@@ -1528,16 +1557,19 @@
       };
     }
 
-    function drawAGPCharts({ force = true } = {}) {
+    function drawAGPCharts(options) {
+      const isForce = options ? (options.force || false) : false;
       if (!state.data.entries.length) return;
       const now = Date.now();
-      if (!force && agpChartInstance && now - state.lastAgpDrawAt < CONFIG.AGP_REFRESH_INTERVAL_MS) return;
+      if (!isForce && agpChartInstance && now - state.lastAgpDrawAt < CONFIG.AGP_REFRESH_INTERVAL_MS) return;
       state.lastAgpDrawAt = now;
 
       Chart.defaults.color = '#94a3b8';
       Chart.defaults.font.family = 'Inter, sans-serif';
 
-      const { percentiles, todayData } = buildAgpData();
+      const dataset = buildAgpData();
+      const percentiles = dataset.percentiles;
+      const todayData = dataset.todayData;
 
       const profEl = document.getElementById('agpProfileChart');
       const agpEl = document.getElementById('agpChart');
@@ -1546,7 +1578,7 @@
       if (!agpProfileChartInstance) {
         agpProfileChartInstance = new Chart(profEl.getContext('2d'), { type: 'scatter', data: { datasets: [] }, options: baseAgpOptions() });
       }
-      agpProfileChartInstance.data.datasets = [{ data: todayData, backgroundColor: ctx => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; }, pointRadius: 2.5 }];
+      agpProfileChartInstance.data.datasets = [{ data: todayData, backgroundColor: function (ctx) { const y = ctx.raw && ctx.raw.y ? ctx.raw.y : 0; return y < 70 ? '#f87171' : (y > 180 ? '#facc15' : '#4ade80'); }, pointRadius: 2.5 }];
       agpProfileChartInstance.update('none');
 
       if (!agpChartInstance) {
@@ -1583,7 +1615,7 @@
       const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
       if (n === 0) return 'Today';
       if (n === 1) return 'Yesterday';
-      return `${n} days ago`;
+      return n + ' days ago';
     }
 
     function getSelectedDayRange() {
@@ -1592,7 +1624,7 @@
       start.setDate(start.getDate() - state.offsetDays);
       const end = new Date(start);
       end.setDate(end.getDate() + 1);
-      return { start, end };
+      return { start: start, end: end };
     }
 
     function updateSelectedDayStats() {
@@ -1605,23 +1637,23 @@
         return;
       }
 
-      const { start, end } = getSelectedDayRange();
-      const stats = calcStatsForPeriod(start, end);
-      const dateLabel = `${start.getMonth() + 1}/${start.getDate()}`;
-      const title = state.offsetDays === 1 ? `YESTERDAY ${dateLabel}` : `${state.offsetDays} DAYS AGO ${dateLabel}`;
+      const range = getSelectedDayRange();
+      const stats = calcStatsForPeriod(range.start, range.end);
+      const dateLabel = (range.start.getMonth() + 1) + '/' + range.start.getDate();
+      const title = state.offsetDays === 1 ? 'YESTERDAY ' + dateLabel : state.offsetDays + ' DAYS AGO ' + dateLabel;
 
       safeSetText('selected-day-title', title);
-      safeSetText('selected-day-tir', `${Math.round(stats.tir)}%`);
-      safeSetText('selected-day-tir-score', Math.round(stats.tirScore));
-      safeSetText('selected-day-avg', stats.mean > 0 ? Math.round(stats.mean) : '--');
+      safeSetText('selected-day-tir', Math.round(stats.tir) + '%');
+      safeSetText('selected-day-tir-score', String(Math.round(stats.tirScore)));
+      safeSetText('selected-day-avg', stats.mean > 0 ? String(Math.round(stats.mean)) : '--');
       safeSetText('selected-day-gmi', stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
       safeSetText('selected-day-adj', stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
-      safeSetText('selected-day-carbs', Math.round(stats.carbs));
+      safeSetText('selected-day-carbs', String(Math.round(stats.carbs)));
       safeSetText('selected-day-cr-bolus', stats.crBolus > 0 ? stats.crBolus.toFixed(1) : '--');
       safeSetText('selected-day-cr-total', stats.crTotal > 0 ? stats.crTotal.toFixed(1) : '--');
-      safeSetStyle('selected-day-tbr-bar', 'width', `${Math.min(100, Math.max(0, stats.tbr))}%`);
-      safeSetStyle('selected-day-tir-bar', 'width', `${Math.min(100, Math.max(0, stats.tir))}%`);
-      safeSetStyle('selected-day-tar-bar', 'width', `${Math.min(100, Math.max(0, stats.tar))}%`);
+      safeSetStyle('selected-day-tbr-bar', 'width', Math.min(100, Math.max(0, stats.tbr)) + '%');
+      safeSetStyle('selected-day-tir-bar', 'width', Math.min(100, Math.max(0, stats.tir)) + '%');
+      safeSetStyle('selected-day-tar-bar', 'width', Math.min(100, Math.max(0, stats.tar)) + '%');
       panel.classList.remove('hidden');
       panel.classList.add('md:flex');
     }
@@ -1635,14 +1667,14 @@
     }
 
     function syncVisibleDayFromChart() {
-      if (!chartInstance?.scales?.x) return;
+      if (!chartInstance || !chartInstance.scales || !chartInstance.scales.x) return;
       const x = chartInstance.scales.x;
       const center = (Number(x.min) + Number(x.max)) / 2;
       const newOffset = dayOffsetFromTimeMs(center);
       if (newOffset !== state.offsetDays) {
         state.offsetDays = newOffset;
       }
-      updateDateControls({ fromChart: true });
+      updateDateControls();
     }
 
     function updateDateControls() {
@@ -1663,7 +1695,7 @@
         btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
         btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
       }
-      document.querySelectorAll('.time-btn').forEach(btn => {
+      document.querySelectorAll('.time-btn').forEach(function (btn) {
         const active = Number(btn.dataset.hours) === state.timeRangeHours;
         btn.classList.toggle('bg-slate-600', active);
         btn.classList.toggle('text-white', active);
@@ -1700,24 +1732,26 @@
     }
 
     function toggleCurrentAdvice() {
-      console.log("Current status active.");
+      console.log('Current status active.');
     }
 
     function initEvents() {
       document.getElementById('summary-panel').addEventListener('click', toggleSummary);
 
-      document.getElementById('btn-fullscreen').addEventListener('click', () => {
-        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(console.log);
-        else document.exitFullscreen?.();
+      document.getElementById('btn-fullscreen').addEventListener('click', function () {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(function (e) { console.log(e); });
+        else if (document.exitFullscreen) document.exitFullscreen();
       });
 
-      document.getElementById('btn-settings').addEventListener('click', () => {
+      document.getElementById('btn-settings').addEventListener('click', function () {
         document.getElementById('ns-url').value = state.url;
         document.getElementById('ns-secret').value = state.secret;
         document.getElementById('settings-modal').classList.remove('hidden');
       });
-      document.getElementById('btn-cancel-settings').addEventListener('click', () => document.getElementById('settings-modal').classList.add('hidden'));
-      document.getElementById('btn-save-settings').addEventListener('click', () => {
+      document.getElementById('btn-cancel-settings').addEventListener('click', function () {
+        document.getElementById('settings-modal').classList.add('hidden');
+      });
+      document.getElementById('btn-save-settings').addEventListener('click', function () {
         state.url = document.getElementById('ns-url').value.trim().replace(/\/$/, '');
         state.secret = document.getElementById('ns-secret').value.trim();
         localStorage.setItem('ns-url', state.url);
@@ -1728,15 +1762,15 @@
         initApp();
       });
 
-      document.getElementById('btn-prev').addEventListener('click', async () => {
+      document.getElementById('btn-prev').addEventListener('click', async function () {
         await jumpToDay(state.offsetDays + 1);
       });
-      document.getElementById('btn-next').addEventListener('click', async () => {
+      document.getElementById('btn-next').addEventListener('click', async function () {
         await jumpToDay(state.offsetDays - 1);
       });
       document.getElementById('btn-today').addEventListener('click', returnToToday);
-      document.querySelectorAll('.time-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
+      document.querySelectorAll('.time-btn').forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
           state.timeRangeHours = Number(e.currentTarget.dataset.hours) || 6;
           state.lastMainChartSignature = '';
           updateDateControls();
@@ -1744,15 +1778,17 @@
         });
       });
 
-      document.getElementById('current-panel').addEventListener('click', (e) => {
+      document.getElementById('current-panel').addEventListener('click', function (e) {
         if (e.target.closest('button')) return;
         toggleCurrentAdvice();
       });
 
-      const resetIdle = () => { idleMinutes = 0; document.body.classList.remove('dimmed'); };
-      ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }));
+      const resetIdle = function () { idleMinutes = 0; document.body.classList.remove('dimmed'); };
+      ['mousemove', 'touchstart', 'click', 'keydown'].forEach(function (evt) {
+        document.addEventListener(evt, resetIdle, { passive: true });
+      });
 
-      document.addEventListener('visibilitychange', () => {
+      document.addEventListener('visibilitychange', function () {
         if (!document.hidden && state.url && state.offsetDays === 0) fetchAllData(false);
       });
     }
@@ -1764,7 +1800,7 @@
       if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
       if (agpChartInstance) { agpChartInstance.destroy(); agpChartInstance = null; }
       if (agpProfileChartInstance) { agpProfileChartInstance.destroy(); agpProfileChartInstance = null; }
-      document.querySelectorAll('.chart-tooltip').forEach(el => el.remove());
+      document.querySelectorAll('.chart-tooltip').forEach(function (el) { el.remove(); });
     }
 
     function initApp() {
@@ -1774,48 +1810,54 @@
       }
       fetchAllData(true);
       if (fetchInterval) clearInterval(fetchInterval);
-      fetchInterval = setInterval(() => {
+      fetchInterval = setInterval(function () {
         if (state.offsetDays === 0) fetchAllData(false);
       }, CONFIG.REFRESH_INTERVAL_MS);
     }
 
-    setInterval(() => {
+    // UI rotation configuration setup
+    setInterval(function () {
       const container = document.getElementById('grid-container');
-      container.classList.remove(`layout-pattern-${currentLayoutPattern}`);
+      container.classList.remove('layout-pattern-' + currentLayoutPattern);
       currentLayoutPattern = (currentLayoutPattern + 1) % 4;
-      container.classList.add(`layout-pattern-${currentLayoutPattern}`);
-      requestAnimationFrame(() => {
-        chartInstance?.resize();
-        if (agpMode) { agpChartInstance?.resize(); agpProfileChartInstance?.resize(); }
+      container.classList.add('layout-pattern-' + currentLayoutPattern);
+      requestAnimationFrame(function () {
+        if (chartInstance) chartInstance.resize();
+        if (agpMode) {
+          if (agpChartInstance) agpChartInstance.resize();
+          if (agpProfileChartInstance) agpProfileChartInstance.resize();
+        }
       });
     }, 10 * 60 * 1000);
 
-    setInterval(() => {
+    // Minor visual shift for screen protection protection
+    setInterval(function () {
       const shiftX = Math.floor(Math.random() * 5) - 2;
       const shiftY = Math.floor(Math.random() * 5) - 2;
-      document.getElementById('shift-container').style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+      document.getElementById('shift-container').style.transform = 'translate(' + shiftX + 'px, ' + shiftY + 'px)';
     }, 60 * 1000);
 
-    setInterval(() => {
+    // Screen dim loop
+    setInterval(function () {
       idleMinutes++;
       if (idleMinutes >= 3) document.body.classList.add('dimmed');
     }, 60 * 1000);
 
-    setInterval(() => {
+    // Timeout loop for returning back to today view automatically
+    setInterval(function () {
       if (state.offsetDays > 0 && state.lastHistoryInteractionAt > 0) {
         const elapsed = Date.now() - state.lastHistoryInteractionAt;
-
         if (elapsed > 3 * 60 * 1000) {
           returnToToday();
         }
       }
     }, 30 * 1000);
 
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', function () {
       if (fetchInterval) clearInterval(fetchInterval);
-      chartInstance?.destroy();
-      agpChartInstance?.destroy();
-      agpProfileChartInstance?.destroy();
+      if (chartInstance) chartInstance.destroy();
+      if (agpChartInstance) agpChartInstance.destroy();
+      if (agpProfileChartInstance) agpProfileChartInstance.destroy();
     });
 
     initEvents();
