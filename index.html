@@ -99,7 +99,7 @@
       }
 
       .area-graph {
-        min-height: 230px;
+        min-height: 250px;
         flex: 1;
       }
 
@@ -250,6 +250,7 @@
                 </div>
                 <span id="td-tir-val"
                   class="text-[11px] sm:text-sm font-black text-green-400 mt-1.5 leading-none">0%</span>
+                <div id="td-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-300 mt-1">0</div>
               </div>
               <div class="flex flex-col items-center h-full w-3 sm:w-4 opacity-80">
                 <div
@@ -260,15 +261,11 @@
                 </div>
                 <span id="7d-tir-val"
                   class="text-[11px] sm:text-sm font-black text-green-500 mt-1.5 leading-none">0%</span>
+                <div id="7d-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-500/90 mt-1">0</div>
               </div>
             </div>
-            <div class="w-full border-t border-slate-700/60 mt-1 pt-1 flex-none">
-              <div class="text-[9px] font-black text-slate-400 tracking-widest text-center leading-none mb-1">TIR SCORE
-              </div>
-              <div class="flex justify-around w-full items-center leading-none">
-                <span id="td-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-300">0</span>
-                <span id="7d-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-500/90">0</span>
-              </div>
+            <div class="w-full border-t border-slate-700/60 mt-0.5 pt-0.5 text-center flex-none">
+              <span class="text-[8px] font-black text-slate-500 tracking-wider">SCORE</span>
             </div>
           </div>
 
@@ -436,70 +433,65 @@
       </div>
 
       <div class="panel area-graph flex flex-col min-h-0 relative">
-        <div class="flex justify-between items-center mb-1 px-1 flex-none relative gap-2">
-          <div class="flex items-center gap-1 min-w-0 flex-none">
-            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition"
+        <!-- 操作部コンテナ：スマホ環境（max-width:768px）で文字サイズやボタン余白を縮小調整 -->
+        <div class="flex justify-between items-center mb-1 px-0.5 flex-none relative gap-1 md:gap-2 text-[11px] md:text-xs">
+          <div class="flex items-center gap-0.5 md:gap-1 min-w-0 flex-none">
+            <button id="btn-prev" class="p-1 md:p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition flex-shrink-0"
               aria-label="previous day">
-              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+              <i data-lucide="chevron-left" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
             </button>
             <div id="chart-date-label"
-              class="min-w-[104px] text-center font-black text-slate-100 text-xs bg-slate-900/80 border border-slate-600/60 rounded px-2 py-1 shadow z-30">
+              class="w-[72px] md:min-w-[104px] text-center font-black text-slate-100 text-[10px] md:text-xs bg-slate-900/80 border border-slate-600/60 rounded py-1 px-0.5 shadow z-30 truncate">
               today</div>
             <button id="btn-next"
-              class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed"
+              class="p-1 md:p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed flex-shrink-0"
               aria-label="next day" disabled>
-              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              <i data-lucide="chevron-right" class="w-3.5 h-3.5 md:w-4 md:h-4"></i>
             </button>
             <button id="btn-today"
-              class="ml-1 px-3 py-1 bg-slate-600 hover:bg-slate-500 text-white shadow rounded text-[11px] font-black transition">Today</button>
+              class="ml-0.5 md:ml-1 px-1.5 md:px-3 py-1 bg-slate-600 hover:bg-slate-500 text-white shadow rounded text-[10px] md:text-[11px] font-black transition flex-shrink-0">Today</button>
           </div>
 
-          <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium flex-none">
-            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="3">3h</button>
-            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow"
-              data-hours="6">6h</button>
-            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="12">12h</button>
-            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="24">24h</button>
+          <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-[10px] md:text-xs font-medium flex-none">
+            <button class="time-btn px-1.5 md:px-2.5 py-0.5 md:py-1 rounded transition text-slate-200" data-hours="3">3h</button>
+            <button class="time-btn px-1.5 md:px-2.5 py-0.5 md:py-1 rounded transition bg-slate-600 text-white shadow" data-hours="6">6h</button>
+            <button class="time-btn px-1.5 md:px-2.5 py-0.5 md:py-1 rounded transition text-slate-200" data-hours="12">12h</button>
+            <button class="time-btn px-1.5 md:px-2.5 py-0.5 md:py-1 rounded transition text-slate-200" data-hours="24">24h</button>
           </div>
         </div>
+        
+        <!-- 過去表示時のオーバーレイスタンスパネルをコンパクト化 -->
         <div id="selected-day-stats"
-          class="absolute right-3 top-10 hidden md:flex z-20 flex-col gap-1.5 rounded-lg bg-slate-900/90 border border-slate-600/70 px-3 py-2 shadow-xl pointer-events-none min-w-[168px]">
-          <div id="selected-day-title" class="text-[10px] font-black text-slate-300 tracking-widest text-right">DAY
-          </div>
-          <div class="flex flex-col items-stretch gap-1.5">
+          class="absolute right-2 top-8 hidden md:flex z-20 flex-col gap-1 rounded-lg bg-slate-900/95 border border-slate-600/70 p-2 shadow-xl pointer-events-none min-w-[145px] max-w-[170px]">
+          <div id="selected-day-title" class="text-[9px] font-black text-slate-300 tracking-wider text-right">DAY</div>
+          <div class="flex flex-col items-stretch gap-1">
             <div class="flex items-end justify-between leading-none">
-              <span class="text-[10px] font-black text-green-400 tracking-widest">TIR</span>
-              <span id="selected-day-tir" class="text-2xl font-black text-green-400 leading-none">--%</span>
+              <span class="text-[9px] font-black text-green-400 tracking-wider">TIR</span>
+              <span id="selected-day-tir" class="text-xl font-black text-green-400 leading-none">--%</span>
             </div>
-            <div class="h-2.5 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 flex">
+            <div class="h-2 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 flex">
               <div id="selected-day-tbr-bar" class="bg-red-500 h-full" style="width:0%"></div>
               <div id="selected-day-tir-bar" class="bg-green-400 h-full" style="width:0%"></div>
               <div id="selected-day-tar-bar" class="bg-yellow-400 h-full" style="width:0%"></div>
             </div>
-            <div class="flex items-center justify-between border-b border-slate-700/60 pb-1">
-              <span class="text-[10px] font-bold text-emerald-300 tracking-widest">Score</span>
-              <span id="selected-day-tir-score" class="text-lg font-black text-emerald-300 leading-none">--</span>
+            <div class="flex items-center justify-between border-b border-slate-700/60 pb-0.5">
+              <span class="text-[9px] font-bold text-emerald-300 tracking-wider">Score</span>
+              <span id="selected-day-tir-score" class="text-sm font-black text-emerald-300 leading-none">--</span>
             </div>
           </div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-right pt-0.5">
-            <span class="text-[10px] font-bold text-slate-300 text-left">AVG</span>
-            <span><span id="selected-day-avg" class="text-sm font-black text-white">--</span><span
-                class="text-[9px] text-slate-500 ml-0.5">mg/dL</span></span>
-            <span class="text-[10px] font-bold text-pink-300 text-left">GMI / ADJ</span>
-            <span><span id="selected-day-gmi" class="text-sm font-black text-pink-300">--</span><span
-                class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-adj"
-                class="text-sm font-black text-pink-200">--</span></span>
-            <span class="text-[10px] font-bold text-yellow-400 text-left">CARBS</span>
-            <span><span id="selected-day-carbs" class="text-sm font-black text-yellow-300">--</span><span
-                class="text-[9px] text-slate-500 ml-0.5">g</span></span>
-            <span class="text-[10px] font-bold text-orange-400 text-left">CR</span>
-            <span><span id="selected-day-cr-bolus" class="text-sm font-black text-orange-200">--</span><span
-                class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-cr-total"
-                class="text-sm font-black text-orange-300">--</span></span>
+          <div class="grid grid-cols-2 gap-x-2 gap-y-0.5 text-right text-[11px] pt-0.5">
+            <span class="text-[9px] font-bold text-slate-300 text-left">AVG</span>
+            <span><span id="selected-day-avg" class="text-xs font-black text-white">--</span><span class="text-[8px] text-slate-500 ml-0.5">mg</span></span>
+            <span class="text-[9px] font-bold text-pink-300 text-left">GMI/ADJ</span>
+            <span><span id="selected-day-gmi" class="text-xs font-black text-pink-300">--</span><span class="text-[8px] text-slate-500 mx-0.5">/</span><span id="selected-day-adj" class="text-xs font-black text-pink-200">--</span></span>
+            <span class="text-[9px] font-bold text-yellow-400 text-left">CARBS</span>
+            <span><span id="selected-day-carbs" class="text-xs font-black text-yellow-300">--</span><span class="text-[8px] text-slate-500 ml-0.5">g</span></span>
+            <span class="text-[9px] font-bold text-orange-400 text-left">CR</span>
+            <span><span id="selected-day-cr-bolus" class="text-xs font-black text-orange-200">--</span><span class="text-[8px] text-slate-500 mx-0.5">/</span><span id="selected-day-cr-total" class="text-xs font-black text-orange-300">--</span></span>
           </div>
         </div>
-        <div
-          class="absolute right-3 top-10 text-[10px] text-right pointer-events-none hidden md:flex z-10 flex-col items-end gap-0.5">
+        
+        <div class="absolute right-2 top-8 text-[9px] text-right pointer-events-none hidden md:flex z-10 flex-col items-end gap-0.5 opacity-60">
           <div class="text-blue-400 font-bold">Basal (U/h)</div>
           <div class="text-sky-400 font-bold">IOB (U)</div>
         </div>
@@ -546,7 +538,6 @@
         this.lowThreshold = config.lowThreshold || 70;
         this.highThreshold = config.highThreshold || 180;
         this.veryHighThreshold = config.veryHighThreshold || 250;
-        // ペナルティ係数をより臨床的な変動リスク（SD/CV）と相関するように調整
         this.penaltyHigh = config.penaltyHigh || 0.005;
         this.penaltyVeryHigh = config.penaltyVeryHigh || 0.010;
       }
@@ -563,28 +554,21 @@
         const total = values.length;
         const mean = values.reduce((acc, val) => acc + val, 0) / total;
         
-        // 通常のGMI (標準式)
         const gmi = 3.31 + 0.02392 * mean;
 
-        // --- Adj (調整GMI) の高精度化ロジック ---
         const tar = values.filter(v => v > this.highThreshold).length / total * 100;
         const vTar = values.filter(v => v > this.veryHighThreshold).length / total * 100;
         const tbr = values.filter(v => v < this.lowThreshold).length / total * 100;
 
-        // 1. 低血糖を完全に除外するのではなく、スパイク（急激な乱高下）を評価するため、
-        // 標準偏差（SD）と血糖変動係数（CV）要素を組み込みます。
         const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
         const cv = mean > 0 ? (sd / mean) * 100 : 0;
 
-        // 2. 基本となるベース血糖値（低血糖を除外した平均）
         const nonLowValues = values.filter(v => v >= this.lowThreshold);
         const nonLowMean = nonLowValues.length ? nonLowValues.reduce((a, b) => a + b, 0) / nonLowValues.length : mean;
         let baseGmi = 3.31 + 0.02392 * nonLowMean;
 
-        // 3. 乱高下（CV > 36% が臨床的な不安定の閾値）および低血糖頻度（TBR）に応じた動的ペナルティ
-        // 変動が激しい、または低血糖を回避するためにインスリン設定（CR/ISF）が歪んでいる可能性をAdjに反映
         const variabilityFactor = cv > 36 ? (cv - 36) * 0.01 : 0;
-        const hypoRiskFactor = tbr * 0.015; // 低血糖がある場合は、インスリン過剰 or タイミングズレのペナルティ
+        const hypoRiskFactor = tbr * 0.015;
 
         const adjustedGmi = baseGmi + 
                             (tar * this.penaltyHigh) + 
@@ -935,7 +919,9 @@
       }
 
       calculateSummaries();
-      updateChart({ force: dataFetched });
+      
+      const shouldForceCenter = dataFetched && (state.lastHistoryInteractionAt === 0);
+      updateChart({ force: shouldForceCenter });
 
       const now = Date.now();
       if (agpMode && (dataFetched || now - state.lastAgpDrawAt > CONFIG.AGP_REFRESH_INTERVAL_MS)) {
@@ -1003,8 +989,6 @@
 
         const type = (t.eventType || '').toLowerCase();
         if (type.includes('temp basal') || type.includes('profile')) return;
-
-        const enteredBy = (t.enteredBy || '').toLowerCase();
 
         const isSMB = isLikelySMB(t);
 
@@ -1146,19 +1130,21 @@
       const selectedDayEnd = new Date(selectedDayStart);
       selectedDayEnd.setDate(selectedDayEnd.getDate() + 1);
 
-      let targetStart = new Date(selectedDayStart);
-      let initialDisplayMax;
-
-      if (state.offsetDays === 0) {
-        const nowMs = Date.now();
-        targetStart = new Date(nowMs - state.timeRangeHours * 60 * 60 * 1000);
-        initialDisplayMax = nowMs;
-      } else {
-        initialDisplayMax = Math.min(
-          targetStart.getTime() + state.timeRangeHours * 60 * 60 * 1000,
-          timelineEnd.getTime()
-        );
+      let targetCenterTime = Date.now();
+      if (state.data.entries.length > 0) {
+        targetCenterTime = toTimeMs(state.data.entries[state.data.entries.length - 1]);
       }
+
+      if (state.offsetDays > 0) {
+        const simulatedCenter = new Date(targetCenterTime);
+        simulatedCenter.setDate(simulatedCenter.getDate() - state.offsetDays);
+        targetCenterTime = simulatedCenter.getTime();
+      }
+
+      const halfWindowMs = (state.timeRangeHours * 60 * 60 * 1000) / 2;
+      const initialDisplayMin = targetCenterTime - halfWindowMs;
+      const initialDisplayMax = targetCenterTime + halfWindowMs;
+
       const panMaxEnd = new Date(timelineEnd);
 
       const plotEntries = state.data.entries.filter(e => {
@@ -1265,7 +1251,7 @@
         }
       }
 
-      return { targetStart, initialDisplayMax, timelineStart, panMaxEnd, selectedDayStart, selectedDayEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
+      return { initialDisplayMin, initialDisplayMax, timelineStart, panMaxEnd, selectedDayStart, selectedDayEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
     }
 
     function getOrCreateTooltip(chart) {
@@ -1331,6 +1317,7 @@
 
       const payload = getMainChartPayload();
       const signature = [state.offsetDays, state.timeRangeHours, state.data.entries.length, state.data.treatments.length, state.data.devicestatus.length].join('|');
+      
       if (!force && chartInstance && signature === state.lastMainChartSignature) return;
       state.lastMainChartSignature = signature;
 
@@ -1355,11 +1342,20 @@
               legend: { display: false },
               tooltip: { enabled: false, external: makeExternalTooltip(payload.plotTreats) },
               annotation: { annotations: payload.annotations },
-              zoom: { pan: { enabled: true, mode: 'x', onPanComplete: () => syncVisibleDayFromChart() }, zoom: { wheel: { enabled: false }, pinch: { enabled: false }, mode: 'x', onZoomComplete: () => syncVisibleDayFromChart() }, limits: { x: { min: payload.timelineStart.getTime(), max: payload.panMaxEnd.getTime() } } }
+              zoom: { 
+                pan: { 
+                  enabled: true, 
+                  mode: 'x', 
+                  onPanComplete: () => syncVisibleDayFromChart(),
+                  onPanStart: () => { state.lastHistoryInteractionAt = Date.now(); }
+                }, 
+                zoom: { wheel: { enabled: false }, pinch: { enabled: false }, mode: 'x' }, 
+                limits: { x: { min: payload.timelineStart.getTime(), max: payload.panMaxEnd.getTime() } } 
+              }
             },
             layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
             scales: {
-              x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, min: payload.targetStart.getTime(), max: payload.initialDisplayMax, grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { font: { size: 11 }, maxRotation: 0, autoSkip: true } },
+              x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, min: payload.initialDisplayMin, max: payload.initialDisplayMax, grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { font: { size: 11 }, maxRotation: 0, autoSkip: true } },
               y: { position: 'left', min: payload.yAxisMin, max: payload.yAxisMax, afterBuildTicks: addTargetTicks, ticks: targetTickStyle(), grid: { color: 'rgba(51,65,85,0.3)' } },
               yBasal: { position: 'right', min: 0, max: yBasalMax, reverse: true, grid: { display: false }, border: { display: false }, ticks: { display: false } },
               yIob: { position: 'right', min: 0, max: yIobMax, reverse: false, grid: { display: false }, border: { display: false }, ticks: { display: false } }
@@ -1380,8 +1376,10 @@
       chartInstance.options.plugins.annotation.annotations = payload.annotations;
       chartInstance.options.plugins.zoom.limits.x.min = payload.timelineStart.getTime();
       chartInstance.options.plugins.zoom.limits.x.max = payload.panMaxEnd.getTime();
-      chartInstance.options.scales.x.min = payload.targetStart.getTime();
+      
+      chartInstance.options.scales.x.min = payload.initialDisplayMin;
       chartInstance.options.scales.x.max = payload.initialDisplayMax;
+      
       chartInstance.options.scales.y.max = payload.yAxisMax;
       chartInstance.options.scales.yBasal.max = yBasalMax;
       chartInstance.options.scales.yBasal.ticks.callback = v => v <= payload.maxBasalVal ? v : '';
@@ -1535,13 +1533,12 @@
       }
     }
 
-
-function formatRelativeDayLabel(offsetDays) {
-  const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
-  if (n === 0) return 'Today';
-  if (n === 1) return 'Yesterday';
-  return `${n} days ago`;
-}
+    function formatRelativeDayLabel(offsetDays) {
+      const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+      if (n === 0) return 'Today';
+      if (n === 1) return 'Yesterday';
+      return `${n}d ago`;
+    }
 
     function getSelectedDayRange() {
       const base = new Date();
@@ -1599,7 +1596,7 @@ function formatRelativeDayLabel(offsetDays) {
       if (newOffset !== state.offsetDays) {
         state.offsetDays = newOffset;
       }
-      updateDateControls({ fromChart: true });
+      updateDateControls();
     }
 
     function updateDateControls() {
@@ -1697,11 +1694,6 @@ function formatRelativeDayLabel(offsetDays) {
         });
       });
 
-      document.getElementById('current-panel').addEventListener('click', (e) => {
-        if (e.target.closest('button')) return;
-        toggleCurrentAdvice();
-      });
-
       const resetIdle = () => { idleMinutes = 0; document.body.classList.remove('dimmed'); };
       ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }));
 
@@ -1728,7 +1720,9 @@ function formatRelativeDayLabel(offsetDays) {
       fetchAllData(true);
       if (fetchInterval) clearInterval(fetchInterval);
       fetchInterval = setInterval(() => {
-        if (state.offsetDays === 0) fetchAllData(false);
+        if (state.offsetDays === 0 && state.lastHistoryInteractionAt === 0) {
+          fetchAllData(false);
+        }
       }, CONFIG.REFRESH_INTERVAL_MS);
     }
 
@@ -1755,9 +1749,8 @@ function formatRelativeDayLabel(offsetDays) {
     }, 60 * 1000);
 
     setInterval(() => {
-      if (state.offsetDays > 0 && state.lastHistoryInteractionAt > 0) {
+      if (state.lastHistoryInteractionAt > 0) {
         const elapsed = Date.now() - state.lastHistoryInteractionAt;
-
         if (elapsed > 3 * 60 * 1000) {
           returnToToday();
         }
