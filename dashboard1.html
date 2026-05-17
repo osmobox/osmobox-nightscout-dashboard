@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Nightscout Analytical Dashboard</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js & Plugins -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --panel-bg: rgba(15, 23, 42, 0.9);
+      --panel-border: rgba(51, 65, 85, 0.8);
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100dvh;
+      background: #020617; /* Slate 950 */
+      color: #e2e8f0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      overscroll-behavior: none;
+    }
+    .panel {
+      background-color: var(--panel-bg);
+      border-radius: 0.75rem;
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    canvas {
+      display: block;
+      width: 100%; height: 100%;
+    }
+    .summary-grid {
+      display: grid;
+      /* 項目名を少し広くして1行に収めるための調整 */
+      grid-template-columns: 86px repeat(4, minmax(0, 1fr));
+      gap: 4px;
+    }
+    @media (max-width: 768px) {
+      .summary-grid {
+        grid-template-columns: 78px repeat(4, minmax(0, 1fr));
+      }
+    }
+    /* Loading Spinner */
+    .loader {
+      border: 4px solid rgba(255,255,255,0.1);
+      border-left-color: #3b82f6;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body class="flex flex-col select-none overflow-hidden">
+  <header class="flex items-center justify-between px-2 sm:px-4 py-2 bg-slate-900 border-b border-slate-800 shadow-md flex-none z-10 gap-2">
+    <div class="font-black text-lg text-blue-400 tracking-wide flex items-center gap-2 flex-none">
+      <i data-lucide="activity" class="w-5 h-5"></i> <span class="hidden sm:inline">Dashboard</span>
+    </div>
+    <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+      <!-- Period Toggle Buttons -->
+      <div class="flex items-center bg-slate-800 rounded p-0.5 border border-slate-700 text-xs font-bold" id="header-period-controls">
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="4">4W</button>
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="8">8W</button>
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="12">12W</button>
+      </div>
+      
+      <button id="btn-toggle-target" class="px-2 sm:px-3 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded text-sm font-bold shadow transition flex items-center gap-1.5 text-green-400">
+        <span id="header-target-label" class="tracking-wider">TIR</span> <i data-lucide="refresh-cw" class="w-3 h-3 text-slate-400"></i>
+      </button>
+      <button id="btn-open-settings" class="px-2 sm:px-3 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded text-sm font-bold shadow transition flex items-center gap-2">
+        <i data-lucide="settings" class="w-4 h-4"></i><span class="hidden sm:inline">Settings</span>
+      </button>
+    </div>
+  </header>
+  
+  <main class="flex-1 flex flex-col gap-3 p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
+    
+    <div class="panel flex-none lg:flex-[0.8] flex flex-col min-h-[400px] lg:min-h-0 p-3 relative" id="summary-panel">
+      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 flex-none pl-1 border-b border-slate-700 pb-2">
+        <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Statistical Summary
+      </h2>
+
+      <!-- TIRカラムの幅を広げました -->
+      <div class="flex-1 grid grid-cols-[120px_1fr] sm:grid-cols-[170px_1fr] gap-3 min-h-0 overflow-y-auto pr-1">
+        
+        <!-- Left Column: TIR Bars -->
+        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2 flex flex-col min-h-0 shadow-inner">
+          <div id="label-tir" class="text-[12px] font-black text-green-400 tracking-widest text-center leading-none mt-1 mb-2">TIR</div>
+          <div class="grid grid-cols-4 text-center text-[10px] font-black text-slate-300 mb-2 gap-1 flex-none">
+            <span>TD</span><span>YD</span><span>7D</span><span id="summary-period-label" class="text-blue-300">4W</span>
+          </div>
+          <div class="flex-1 grid grid-cols-4 gap-1 items-end min-h-[60px] px-1 pb-1">
+            <!-- Today -->
+            <div class="flex flex-col items-center h-full min-h-0">
+              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
+                <div id="td-tar" class="bg-yellow-400 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="td-tir" class="bg-green-400 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="td-tbr" class="bg-red-500 w-full transition-all duration-500" style="height:0%"></div>
+              </div>
+              <span id="td-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-400 mt-1">0%</span>
+            </div>
+            <!-- Yesterday -->
+            <div class="flex flex-col items-center h-full min-h-0 opacity-90">
+              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
+                <div id="yd-tar" class="bg-yellow-500 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="yd-tir" class="bg-green-500 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="yd-tbr" class="bg-red-600 w-full transition-all duration-500" style="height:0%"></div>
+              </div>
+              <span id="yd-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-500 mt-1">0%</span>
+            </div>
+            <!-- 7 Days -->
+            <div class="flex flex-col items-center h-full min-h-0 opacity-80">
+              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
+                <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="7d-tir" class="bg-green-500 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="7d-tbr" class="bg-red-600 w-full transition-all duration-500" style="height:0%"></div>
+              </div>
+              <span id="7d-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-500 mt-1">0%</span>
+            </div>
+            <!-- Period -->
+            <div class="flex flex-col items-center h-full min-h-0 opacity-70">
+              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
+                <div id="pw-tar" class="bg-yellow-600 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="pw-tir" class="bg-green-600 w-full transition-all duration-500" style="height:0%"></div>
+                <div id="pw-tbr" class="bg-red-700 w-full transition-all duration-500" style="height:0%"></div>
+              </div>
+              <span id="pw-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-600 mt-1">0%</span>
+            </div>
+          </div>
+          <div class="w-full border-t border-slate-700/60 mt-1 pt-1 flex-none">
+            <div id="label-tir-score" class="text-[9px] font-black text-slate-400 tracking-widest text-center leading-none mb-1">SCORE</div>
+            <div class="grid grid-cols-4 text-center leading-none gap-1">
+              <span id="td-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-300">0</span>
+              <span id="yd-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-400">0</span>
+              <span id="7d-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-500">0</span>
+              <span id="pw-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-600">0</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Detail Stats -->
+        <div class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 sm:px-3 py-2 min-h-0 gap-2 overflow-y-auto">
+          <div class="grid summary-grid items-end border-b border-slate-600/50 pb-1 flex-none">
+            <div></div>
+            <div class="text-center text-[10px] sm:text-[12px] font-black text-white tracking-widest leading-none">Today</div>
+            <div class="text-center text-[10px] sm:text-[12px] font-black text-slate-300 tracking-widest leading-none">Yesterday</div>
+            <div class="text-center text-[10px] sm:text-[12px] font-bold text-slate-400 tracking-widest leading-none">7 Days</div>
+            <div class="text-center text-[10px] sm:text-[12px] font-bold text-blue-300 tracking-widest leading-none" id="summary-period-title">-- Days</div>
+          </div>
+
+          <!-- AVG BG -->
+          <div class="grid summary-grid items-center flex-none">
+            <div class="text-[10px] sm:text-[12px] text-slate-300 font-bold uppercase pl-1">AVG BG</div>
+            <div class="text-center font-black text-white text-sm sm:text-lg leading-none"><span id="td-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="td-cv">--</span>%</span></div>
+            <div class="text-center font-bold text-slate-300 text-sm sm:text-lg leading-none"><span id="yd-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="yd-cv">--</span>%</span></div>
+            <div class="text-center font-bold text-slate-400 text-sm sm:text-lg leading-none"><span id="7d-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="7d-cv">--</span>%</span></div>
+            <div class="text-center font-bold text-slate-500 text-sm sm:text-lg leading-none"><span id="pw-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="pw-cv">--</span>%</span></div>
+          </div>
+
+          <!-- GMI -->
+          <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 flex-none">
+            <div class="text-[10px] sm:text-[12px] text-pink-400 font-bold uppercase pl-1">GMI/Adj</div>
+            <div class="text-center font-black text-pink-300 text-xs sm:text-sm leading-none"><span id="td-gmi">0.0</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="td-ea1c">0.0</span></div>
+            <div class="text-center font-bold text-pink-400 text-xs sm:text-sm leading-none"><span id="yd-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="yd-ea1c">0.0</span></div>
+            <div class="text-center font-bold text-pink-500 text-xs sm:text-sm leading-none"><span id="7d-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="7d-ea1c">0.0</span></div>
+            <div class="text-center font-bold text-pink-600 text-xs sm:text-sm leading-none"><span id="pw-gmi">0.0</span><span class="text-[9px] text-slate-700 mx-0.5">/</span><span id="pw-ea1c">0.0</span></div>
+          </div>
+
+          <!-- TDD -->
+          <div class="grid summary-grid items-center bg-blue-900/20 rounded py-1.5 border border-blue-800/30 mt-1 flex-none">
+            <div class="text-[10px] sm:text-[12px] text-blue-400 font-bold uppercase pl-1">TDD</div>
+            <div class="text-center font-black text-blue-200 text-sm sm:text-base leading-none"><span id="td-tdd">0.0</span><span class="text-[9px] text-blue-400 ml-0.5">U</span></div>
+            <div class="text-center font-bold text-blue-300 text-sm sm:text-base leading-none"><span id="yd-tdd">0.0</span></div>
+            <div class="text-center font-bold text-blue-400 text-sm sm:text-base leading-none"><span id="7d-tdd">0.0</span></div>
+            <div class="text-center font-bold text-blue-500 text-sm sm:text-base leading-none"><span id="pw-tdd">0.0</span></div>
+          </div>
+
+          <!-- Insulin Bars -->
+          <div class="grid summary-grid items-center text-[10px] leading-none mt-1 flex-none">
+            <div></div>
+            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50"><div id="td-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="td-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="td-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
+            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50"><div id="yd-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="yd-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="yd-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
+            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-75"><div id="7d-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="7d-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="7d-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
+            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-60"><div id="pw-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="pw-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="pw-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
+          </div>
+
+          <!-- Insulin Values: Single Line -->
+          <div class="grid summary-grid items-center text-[9px] sm:text-[10px] leading-none text-center flex-none">
+            <div class="text-left text-slate-400 font-bold whitespace-nowrap tracking-tight pl-1">Basal/CB/Bolus</div>
+            <div class="whitespace-nowrap tracking-tighter"><span id="td-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-300" id="td-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-300" id="td-bolus">0.0</span></div>
+            <div class="whitespace-nowrap tracking-tighter"><span id="yd-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-400" id="yd-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-400" id="yd-bolus">0.0</span></div>
+            <div class="whitespace-nowrap tracking-tighter"><span id="7d-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-500" id="7d-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-500" id="7d-bolus">0.0</span></div>
+            <div class="whitespace-nowrap tracking-tighter"><span id="pw-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-600" id="pw-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-600" id="pw-bolus">0.0</span></div>
+          </div>
+
+          <!-- CARBS -->
+          <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 mt-1 flex-none">
+            <div class="text-[10px] sm:text-[12px] text-yellow-400 font-bold uppercase pl-1">CARBS</div>
+            <div class="text-center font-black text-yellow-300 text-sm sm:text-base leading-none"><span id="td-carbs">0</span><span class="text-[9px] text-yellow-500 ml-0.5">g</span></div>
+            <div class="text-center font-bold text-yellow-400 text-sm sm:text-base leading-none"><span id="yd-carbs">0</span></div>
+            <div class="text-center font-bold text-yellow-500 text-sm sm:text-base leading-none"><span id="7d-carbs">0</span></div>
+            <div class="text-center font-bold text-yellow-600 text-sm sm:text-base leading-none"><span id="pw-carbs">0</span></div>
+          </div>
+
+          <!-- CR -->
+          <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 flex-none mb-2">
+            <div class="flex flex-col leading-none pl-1"><span class="text-[10px] sm:text-[12px] text-orange-400 font-bold uppercase">EST. CR</span><span class="text-[8px] sm:text-[9px] text-orange-500/70 mt-0.5 font-medium">Bolus/Total</span></div>
+            <div class="text-center font-black text-orange-200 text-xs sm:text-sm leading-none"><span id="td-cr-bolus">0.0</span><span class="text-slate-500 text-[9px] mx-0.5">/</span><span id="td-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-300 text-xs sm:text-sm leading-none"><span id="yd-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="yd-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-500 text-xs sm:text-sm leading-none"><span id="7d-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="7d-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-600 text-xs sm:text-sm leading-none"><span id="pw-cr-bolus">0.0</span><span class="text-slate-700 text-[9px] mx-0.5">/</span><span id="pw-cr-total">0.0</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="flex-none lg:flex-[1.2] grid grid-cols-1 md:grid-cols-2 grid-rows-4 md:grid-rows-2 gap-3 min-h-[1000px] md:min-h-[600px] lg:min-h-0">
+      
+      <!-- Top-Left: Selected Day CGM -->
+      <div class="panel flex flex-col p-3 min-h-0 relative">
+        <div class="flex justify-between items-center mb-2 flex-none z-10">
+           <h2 class="font-bold text-sm text-slate-200 uppercase tracking-widest">Selected Day</h2>
+           <div class="flex items-center gap-2 bg-slate-800 rounded-md p-1 border border-slate-700">
+              <button id="btn-prev-day" class="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold transition">◀</button>
+              <span id="tl-date" class="text-xs font-black w-20 text-center tracking-wider">--/--</span>
+              <button id="btn-next-day" class="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold transition">▶</button>
+           </div>
+           <div class="text-right">
+             <div class="text-[10px] text-slate-400 font-bold uppercase">Score</div>
+             <div id="tl-score" class="text-lg leading-none font-black text-emerald-400">--</div>
+           </div>
+        </div>
+        <div class="flex-1 min-h-0 relative w-full h-full">
+           <canvas id="tl-chart"></canvas>
+        </div>
+      </div>
+      
+      <!-- Top-Right: Best Day CGM -->
+      <div class="panel flex flex-col p-3 min-h-0 relative">
+        <div class="flex justify-between items-center mb-2 flex-none z-10">
+           <div class="flex flex-col">
+             <h2 class="font-bold text-sm text-yellow-400 uppercase tracking-widest flex items-center gap-2">★ Best Day <span id="tr-period-badge" class="text-[10px] bg-yellow-900/50 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-700/50">--W</span></h2>
+             <span id="tr-date" class="text-xs font-bold text-slate-300">--/--</span>
+           </div>
+           <div class="text-right">
+             <div class="text-[10px] text-yellow-500/80 font-bold uppercase">Max Score</div>
+             <div id="tr-score" class="text-lg leading-none font-black text-yellow-400">--</div>
+           </div>
+        </div>
+        <div class="flex-1 min-h-0 relative w-full h-full">
+           <canvas id="tr-chart"></canvas>
+        </div>
+      </div>
+      
+      <!-- Bottom-Left: Current Period AGP -->
+      <div class="panel flex flex-col p-3 min-h-0 relative cursor-pointer group transition hover:border-slate-500" onclick="toggleAgpPeriod()">
+        <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-50 border border-slate-600">Tap to toggle period</div>
+        
+        <div id="bl-header-1w" class="flex flex-col mb-1 flex-none z-10 w-full">
+           <div class="flex justify-between items-start w-full">
+             <h2 class="font-bold text-sm text-slate-200 uppercase tracking-widest mt-0.5">AGP <span class="text-blue-400">Current</span> <span class="ml-1 text-[9px] bg-blue-900/50 text-blue-300 px-1 py-0.5 rounded border border-blue-700/50">1 Week</span></h2>
+             <span id="bl-date-range-1w" class="text-[10px] font-bold text-slate-400 text-right">--/-- to --/--</span>
+           </div>
+           <div class="flex flex-wrap justify-between items-end gap-x-2 gap-y-2 text-right mt-1 w-full">
+             <div class="flex items-center gap-2 sm:gap-3">
+               <div class="text-left"><div class="text-[8px] text-slate-400 font-bold uppercase">AVG</div><div class="text-sm leading-none font-black text-white"><span id="bl-avg-1w">--</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-400 font-bold uppercase">CV</div><div class="text-sm leading-none font-black text-slate-300"><span id="bl-cv-1w">--</span><span class="text-[9px]">%</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-400 font-bold uppercase">GMI/Adj</div><div class="text-sm leading-none font-black text-pink-300"><span id="bl-gmi-1w">--</span><span class="text-[9px] text-slate-500 mx-[1px]">/</span><span id="bl-adj-1w">--</span></div></div>
+             </div>
+             <div class="flex items-center gap-3">
+               <div><div class="text-[8px] text-slate-400 font-bold uppercase">In Range</div><div id="bl-inrange-1w" class="text-lg leading-none font-black text-blue-400">--%</div></div>
+               <div><div class="text-[8px] text-slate-400 font-bold uppercase">Score</div><div id="bl-score-1w" class="text-lg leading-none font-black text-emerald-400">--</div></div>
+             </div>
+           </div>
+        </div>
+
+        <div id="bl-header-full" class="hidden flex-col mb-1 flex-none z-10 w-full">
+           <div class="flex justify-between items-start w-full">
+             <h2 class="font-bold text-sm text-slate-200 uppercase tracking-widest mt-0.5">AGP <span class="text-blue-400">Current</span> <span id="bl-period-badge-full" class="ml-1 text-[9px] bg-blue-900/50 text-blue-300 px-1 py-0.5 rounded border border-blue-700/50">-- Weeks</span></h2>
+             <span id="bl-date-range-full" class="text-[10px] font-bold text-slate-400 text-right">--/-- to --/--</span>
+           </div>
+           <div class="flex flex-wrap justify-between items-end gap-x-2 gap-y-2 text-right mt-1 w-full">
+             <div class="flex items-center gap-2 sm:gap-3">
+               <div class="text-left"><div class="text-[8px] text-slate-400 font-bold uppercase">AVG</div><div class="text-sm leading-none font-black text-white"><span id="bl-avg-full">--</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-400 font-bold uppercase">CV</div><div class="text-sm leading-none font-black text-slate-300"><span id="bl-cv-full">--</span><span class="text-[9px]">%</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-400 font-bold uppercase">GMI/Adj</div><div class="text-sm leading-none font-black text-pink-300"><span id="bl-gmi-full">--</span><span class="text-[9px] text-slate-500 mx-[1px]">/</span><span id="bl-adj-full">--</span></div></div>
+             </div>
+             <div class="flex items-center gap-3">
+               <div><div class="text-[8px] text-slate-400 font-bold uppercase">In Range</div><div id="bl-inrange-full" class="text-lg leading-none font-black text-blue-400">--%</div></div>
+               <div><div class="text-[8px] text-slate-400 font-bold uppercase">Score</div><div id="bl-score-full" class="text-lg leading-none font-black text-emerald-400">--</div></div>
+             </div>
+           </div>
+        </div>
+        <div class="flex-1 min-h-0 relative w-full h-full mt-1">
+           <div id="bl-container-1w" class="absolute inset-0"><canvas id="bl-chart-1w"></canvas></div>
+           <div id="bl-container-full" class="absolute inset-0 hidden"><canvas id="bl-chart-full"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Bottom-Right: Previous Period AGP -->
+      <div class="panel flex flex-col p-3 min-h-0 relative cursor-pointer group transition hover:border-slate-500" onclick="toggleAgpPeriod()">
+        <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-50 border border-slate-600">Tap to toggle period</div>
+        
+        <div id="br-header-1w" class="flex flex-col mb-1 flex-none z-10 w-full opacity-80">
+           <div class="flex justify-between items-start w-full">
+             <h2 class="font-bold text-sm text-slate-300 uppercase tracking-widest mt-0.5">AGP <span class="text-slate-400">Previous</span> <span class="ml-1 text-[9px] bg-slate-800 text-slate-400 px-1 py-0.5 rounded border border-slate-600/50">1 Week</span></h2>
+             <span id="br-date-range-1w" class="text-[10px] font-bold text-slate-500 text-right">--/-- to --/--</span>
+           </div>
+           <div class="flex flex-wrap justify-between items-end gap-x-2 gap-y-2 text-right mt-1 w-full">
+             <div class="flex items-center gap-2 sm:gap-3">
+               <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">AVG</div><div class="text-sm leading-none font-black text-slate-300"><span id="br-avg-1w">--</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">CV</div><div class="text-sm leading-none font-black text-slate-400"><span id="br-cv-1w">--</span><span class="text-[9px]">%</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">GMI/Adj</div><div class="text-sm leading-none font-black text-pink-400"><span id="br-gmi-1w">--</span><span class="text-[9px] text-slate-600 mx-[1px]">/</span><span id="br-adj-1w">--</span></div></div>
+             </div>
+             <div class="flex items-center gap-3">
+               <div><div class="text-[8px] text-slate-500 font-bold uppercase">In Range</div><div id="br-inrange-1w" class="text-lg leading-none font-black text-slate-400">--%</div></div>
+               <div><div class="text-[8px] text-slate-500 font-bold uppercase">Score</div><div id="br-score-1w" class="text-lg leading-none font-black text-emerald-500">--</div></div>
+             </div>
+           </div>
+        </div>
+
+        <div id="br-header-full" class="hidden flex-col mb-1 flex-none z-10 w-full opacity-80">
+           <div class="flex justify-between items-start w-full">
+             <h2 class="font-bold text-sm text-slate-300 uppercase tracking-widest mt-0.5">AGP <span class="text-slate-400">Previous</span> <span id="br-period-badge-full" class="ml-1 text-[9px] bg-slate-800 text-slate-400 px-1 py-0.5 rounded border border-slate-600/50">-- Weeks</span></h2>
+             <span id="br-date-range-full" class="text-[10px] font-bold text-slate-500 text-right">--/-- to --/--</span>
+           </div>
+           <div class="flex flex-wrap justify-between items-end gap-x-2 gap-y-2 text-right mt-1 w-full">
+             <div class="flex items-center gap-2 sm:gap-3">
+               <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">AVG</div><div class="text-sm leading-none font-black text-slate-300"><span id="br-avg-full">--</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">CV</div><div class="text-sm leading-none font-black text-slate-400"><span id="br-cv-full">--</span><span class="text-[9px]">%</span></div></div>
+               <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">GMI/Adj</div><div class="text-sm leading-none font-black text-pink-400"><span id="br-gmi-full">--</span><span class="text-[9px] text-slate-600 mx-[1px]">/</span><span id="br-adj-full">--</span></div></div>
+             </div>
+             <div class="flex items-center gap-3">
+               <div><div class="text-[8px] text-slate-500 font-bold uppercase">In Range</div><div id="br-inrange-full" class="text-lg leading-none font-black text-slate-400">--%</div></div>
+               <div><div class="text-[8px] text-slate-500 font-bold uppercase">Score</div><div id="br-score-full" class="text-lg leading-none font-black text-emerald-500">--</div></div>
+             </div>
+           </div>
+        </div>
+        <div class="flex-1 min-h-0 relative w-full h-full mt-1">
+           <div id="br-container-1w" class="absolute inset-0"><canvas id="br-chart-1w"></canvas></div>
+           <div id="br-container-full" class="absolute inset-0 hidden"><canvas id="br-chart-full"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </main>
+  
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-600 m-4">
+      <h2 class="text-xl font-black mb-5 text-white tracking-wide border-b border-slate-700 pb-2 flex items-center gap-2">
+        <i data-lucide="settings" class="w-5 h-5 text-blue-400"></i> Analysis Settings
+      </h2>
+      
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Nightscout URL</label>
+          <input type="text" id="ns-url" placeholder="https://your-site.herokuapp.com" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition font-medium">
+        </div>
+        
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Read Token <span class="text-slate-500 lowercase normal-case">(optional)</span></label>
+          <input type="password" id="ns-token" placeholder="Subject-xxxx" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition font-medium">
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Target Mode</label>
+            <select id="target-mode" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-bold cursor-pointer appearance-none">
+              <option value="tir">TIR (70-180)</option>
+              <option value="titr">TITR (70-140)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Analysis Period</label>
+            <select id="period-weeks" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-bold cursor-pointer appearance-none">
+              <option value="4" selected>4 Weeks</option>
+              <option value="8">8 Weeks</option>
+              <option value="12">12 Weeks</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      <div class="mt-8 flex justify-end gap-3">
+        <button id="btn-close-settings" class="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-700 transition font-bold hidden">Cancel</button>
+        <button id="btn-save-settings" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded-lg transition font-black shadow-lg">Fetch & Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="fixed inset-0 z-[60] bg-slate-950/90 flex-col items-center justify-center hidden">
+     <div class="loader mb-6"></div>
+     <div class="text-white text-lg font-black tracking-widest uppercase mb-2">Fetching Data</div>
+     <div class="text-slate-400 text-sm font-bold text-center px-4 max-w-sm">
+       Downloading up to 12 weeks of historical data.<br>This may take a few moments.
+     </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    // --- Clinical A1c Calculator ---
+    class ClinicalA1cCalculator {
+      constructor(config = {}) {
+        // 設定は保持しますが、一律の閾値ではなく階層型糖化モデルを使用します
+      }
+      
+      analyze(glucoseData) {
+        const validData = glucoseData.filter(d => {
+          const v = Number(d.sgv ?? d.glucose ?? d.value);
+          return Number.isFinite(v) && v > 0 && Number.isFinite(d.date);
+        });
+
+        if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
+
+        // 基準日をデータ内の最新日時とする
+        const latestMs = validData[validData.length - 1].date;
+        
+        let sumWeight = 0;
+        let sumWeightedSgv = 0;       // 通常のGMI用（純粋な加重平均）
+        let sumWeightedEffSgv = 0;    // ADJ用（階層的糖化モデルを適用した実効血糖値の加重平均）
+
+        for (let i = 0; i < validData.length; i++) {
+          const d = validData[i];
+          const v = Number(d.sgv ?? d.glucose ?? d.value);
+          
+          // 1. 暴露時間（AUC）の計算: 前のデータポイントとの時間差
+          let durationMs = 5 * 60 * 1000;
+          if (i > 0) {
+             const prev = validData[i - 1];
+             durationMs = d.date - prev.date;
+             // 欠損が長すぎる場合、最大15分までの暴露として打ち切る
+             if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
+             if (durationMs < 0) durationMs = 5 * 60 * 1000;
+          }
+
+          // 2. 赤血球寿命(約120日)に基づく線形減衰ウェイト（直近ほど重い）
+          const ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
+          const rbcWeight = Math.max(0, 1 - (ageDays / 120));
+          
+          // 時間積分（暴露時間） × 赤血球寿命モデル加重
+          const finalWeight = durationMs * rbcWeight;
+
+          sumWeight += finalWeight;
+          sumWeightedSgv += v * finalWeight;
+
+          // 3. 階層的糖化モデルによる「実効血糖値」の計算
+          let vEff = v;
+          if (v < 70) {
+            // 【重要】低血糖はHbA1cを下げない（一度糖化したものは戻らないため70でクリップ）
+            vEff = 70;
+          } else if (v >= 70 && v < 100) {
+            vEff = v;
+          } else if (v >= 100 && v < 140) {
+            vEff = v * 1.01; // 軽度の上昇によるわずかな糖化亢進
+          } else if (v >= 140 && v < 180) {
+            vEff = v * 1.04; // 糖化の加速
+          } else if (v >= 180 && v < 240) {
+            vEff = v * 1.08; // 強い糖化
+          } else if (v >= 240 && v < 300) {
+            vEff = v * 1.12; // 非常に強い糖化
+          } else if (v >= 300) {
+            vEff = v * 1.16; // 極端な高血糖による急激な糖化
+          }
+
+          sumWeightedEffSgv += vEff * finalWeight;
+        }
+
+        if (sumWeight === 0) return { adjustedGmi: 0, gmi: 0 };
+
+        const weightedMean = sumWeightedSgv / sumWeight;
+        const effWeightedMean = sumWeightedEffSgv / sumWeight;
+
+        // 加重平均(暴露時間×赤血球寿命)によるベースGMI
+        const gmi = 3.31 + 0.02392 * weightedMean;
+        
+        // 階層的糖化モデル・低血糖クリップを適用した推定ADJ (より実際のHbA1cに近い推定値)
+        const adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
+        
+        return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
+      }
+    }
+    const a1cCalculator = new ClinicalA1cCalculator();
+
+    // --- State Management ---
+    const state = {
+      url: localStorage.getItem('ns_url') || '',
+      token: localStorage.getItem('ns_token') || '',
+      targetMode: localStorage.getItem('ns_targetMode') || 'tir',
+      periodWeeks: parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10),
+      
+      agpPeriodMode: 'full', // '1w' or 'full'
+      selectedDate: null,    // Timestamp for 0:00 of selected day
+      
+      dataStartDate: null,
+      dataEndDate: null,
+      
+      entries: [],         
+      treatments: [],      
+      profile: null        
+    };
+
+    const chartInstances = {};
+
+    // --- STREAMING_CHUNK:Utility Functions ---
+    const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
+
+    function showModal(force = false) {
+      document.getElementById('ns-url').value = state.url;
+      document.getElementById('ns-token').value = state.token;
+      document.getElementById('target-mode').value = state.targetMode;
+      document.getElementById('period-weeks').value = state.periodWeeks.toString();
+      
+      const btnClose = document.getElementById('btn-close-settings');
+      if (force) btnClose.classList.add('hidden');
+      else btnClose.classList.remove('hidden');
+      
+      document.getElementById('settings-modal').classList.remove('hidden');
+    }
+
+    function hideModal() {
+      document.getElementById('settings-modal').classList.add('hidden');
+    }
+
+    function showLoading() {
+      document.getElementById('loading-overlay').classList.remove('hidden');
+      document.getElementById('loading-overlay').classList.add('flex');
+    }
+
+    function hideLoading() {
+      document.getElementById('loading-overlay').classList.add('hidden');
+      document.getElementById('loading-overlay').classList.remove('flex');
+    }
+
+    function formatShortDate(ms) {
+      const d = new Date(ms);
+      return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function toTimeMs(obj, field = 'dateString') {
+      const raw = obj?.[field] ?? obj?.dateString ?? obj?.created_at ?? obj?.date;
+      if (typeof raw === 'number') return raw;
+      const ms = new Date(raw).getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    }
+
+    // --- STREAMING_CHUNK:Insulin & Treatment Logic ---
+    function isLikelyCB(t) {
+      const insulin = Number(t.insulin || 0);
+      if (!Number.isFinite(insulin) || insulin <= 0) return false;
+      
+      // Loopの場合: automaticフラグがあればそれを最優先で判定
+      // true: 自動補正ボーラス(CB), false: 手動ボーラス(Bolus)
+      if (t.automatic === true) return true;
+      if (t.automatic === false) return false;
+      
+      // automaticフラグが存在しないデータ用へのフォールバック
+      const type = (t.eventType || '').toLowerCase();
+      const carbs = Number(t.carbs || 0);
+      
+      if (carbs > 0) return false;
+      if (type === 'bolus' || type.includes('meal')) return false;
+      if (type.includes('correction')) return true;
+      
+      return false;
+    }
+
+    function getProfileBasalRate(date) {
+      const basal = state.profile?.basal;
+      if (!Array.isArray(basal) || !basal.length) return 0;
+      const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+      let rate = Number(basal[0].value || 0);
+      for (let i = basal.length - 1; i >= 0; i--) {
+        if (secondsSinceMidnight >= Number(basal[i].timeAsSeconds || 0)) { rate = Number(basal[i].value || 0); break; }
+      }
+      return rate;
+    }
+
+    function getTempBasalAbsolute(t) {
+      if (Number.isFinite(Number(t.absolute))) return Number(t.absolute);
+      if (Number.isFinite(Number(t.rate))) return Number(t.rate);
+      return null;
+    }
+
+    function calculateIntegralBasal(startDate, endDate, periodTreats) {
+      if (!state.profile?.basal) return 0;
+      
+      const startMs = startDate.getTime();
+      const endMs = Math.min(endDate.getTime(), Date.now());
+      if (startMs >= endMs) return 0;
+
+      // Temp Basalの探索を最適化（O(N^2)の計算爆発によるフリーズを完全に回避）
+      const tempBasals = periodTreats
+        .filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null)
+        .map(t => {
+           const start = toTimeMs(t, 'created_at');
+           return { start, end: start + Number(t.duration) * 60000, rate: getTempBasalAbsolute(t) };
+        })
+        .filter(tb => tb.end > startMs && tb.start < endMs)
+        .sort((a, b) => a.start - b.start);
+
+      let total = 0;
+      let currentMs = startMs;
+      let tbIndex = 0;
+
+      while (currentMs < endMs) {
+        // 現在時刻を過ぎて終了したTempBasalのインデックスを進める
+        while (tbIndex < tempBasals.length && tempBasals[tbIndex].end <= currentMs) {
+          tbIndex++;
+        }
+
+        let rate;
+        // 現在時刻がTempBasalの期間内であれば適用、そうでなければプロファイルを適用
+        if (tbIndex < tempBasals.length && tempBasals[tbIndex].start <= currentMs) {
+          rate = tempBasals[tbIndex].rate;
+        } else {
+          rate = getProfileBasalRate(new Date(currentMs));
+        }
+
+        total += rate / 60;
+        currentMs += 60000; // 1分進める
+      }
+      return total;
+    }
+
+    // --- STREAMING_CHUNK:Statistical Calculations ---
+    function calcStatsForPeriod(startDate, endDate) {
+      const startMs = startDate.getTime();
+      const endMs = endDate.getTime();
+      
+      const periodEntries = state.entries.filter(e => e.date >= startMs && e.date < endMs);
+      const periodTreats = state.treatments.filter(t => { const d = toTimeMs(t, 'created_at'); return d >= startMs && d < endMs; });
+      
+      const targetMax = state.targetMode === 'titr' ? 140 : 180;
+      let tbr = 0, tir = 0, tar = 0, mean = 0, cv = 0, tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
+      
+      const values = periodEntries.map(e => e.sgv);
+      const total = values.length;
+      
+      if (total > 0) {
+        tbr54 = values.filter(v => v < 54).length / total * 100;
+        tbr70 = values.filter(v => v >= 54 && v < 70).length / total * 100;
+        tbr = tbr54 + tbr70;
+        tir = values.filter(v => v >= 70 && v <= targetMax).length / total * 100;
+        tar = values.filter(v => v > targetMax).length / total * 100;
+        tar250 = values.filter(v => v > 250).length / total * 100;
+        
+        // Dynamic scoring based on mode
+        tirScore = tir - (5 * tbr54) - (2 * tbr70) - (1 * tar250);
+        if (state.targetMode === 'titr') {
+           const pH = values.filter(v => v > 140 && v <= 250).length / total * 100;
+           tirScore -= (0.5 * pH);
+        }
+        tirScore = Math.max(0, Math.min(100, tirScore));
+        
+        mean = values.reduce((a, b) => a + b, 0) / total;
+        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
+        cv = mean > 0 ? (sd / mean) * 100 : 0;
+      }
+      
+      let totalCarbs = 0, bolus = 0, cb = 0;
+      periodTreats.forEach(t => {
+        const carbs = Number(t.carbs || 0);
+        if (Number.isFinite(carbs) && carbs > 0) totalCarbs += carbs;
+        const insulin = Number(t.insulin || 0);
+        if (!Number.isFinite(insulin) || insulin <= 0) return;
+        const type = (t.eventType || '').toLowerCase();
+        if (type.includes('temp basal') || type.includes('profile')) return;
+        if (isLikelyCB(t)) cb += insulin;
+        else bolus += insulin;
+      });
+      
+      const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
+      const tdd = basal + bolus + cb;
+      const activeInsulin = bolus + cb;
+      const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
+      const crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
+      const a1cResult = a1cCalculator.analyze(periodEntries);
+      
+      return { 
+        tbr, tir, tar, tirScore, 
+        carbs: totalCarbs, bolus, cb, basal, tdd, 
+        mean, cv, crBolus, crTotal, 
+        gmi: a1cResult.gmi, adjustedGmi: a1cResult.adjustedGmi 
+      };
+    }
+
+    function renderStats(prefix, stats, days) {
+      safeSetStyle(`${prefix}-tbr`, 'height', `${Math.min(100, Math.max(0, stats.tbr))}%`);
+      safeSetStyle(`${prefix}-tir`, 'height', `${Math.min(100, Math.max(0, stats.tir))}%`);
+      safeSetStyle(`${prefix}-tar`, 'height', `${Math.min(100, Math.max(0, stats.tar))}%`);
+      
+      safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
+      // 整数で表示するようMath.roundを使用
+      safeSetText(`${prefix}-tir-score`, Math.round(stats.tirScore).toString());
+      
+      const tdd = stats.tdd / days;
+      const basal = stats.basal / days;
+      const bolus = stats.bolus / days;
+      const cb = stats.cb / days;
+      
+      safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
+      safeSetText(`${prefix}-basal`, basal.toFixed(1));
+      safeSetText(`${prefix}-cb`, cb.toFixed(1));
+      safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
+      safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
+      
+      safeSetText(`${prefix}-mean`, stats.mean > 0 ? Math.round(stats.mean) : 0);
+      safeSetText(`${prefix}-cv`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+      
+      safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
+      safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
+      safeSetText(`${prefix}-gmi`, stats.gmi.toFixed(1));
+      safeSetText(`${prefix}-ea1c`, stats.adjustedGmi.toFixed(1));
+      
+      if (tdd > 0) {
+        safeSetStyle(`${prefix}-basal-bar`, 'width', `${basal / tdd * 100}%`);
+        safeSetStyle(`${prefix}-cb-bar`, 'width', `${cb / tdd * 100}%`);
+        safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
+      } else {
+        safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-cb-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
+      }
+    }
+
+    function calculateSummaries() {
+      // Dynamic Target mode Labels
+      const targetLabel = state.targetMode === 'titr' ? 'TITR' : 'TIR';
+      safeSetText('label-tir', targetLabel);
+      safeSetText('label-tir-score', `${targetLabel} SCORE`);
+
+      const baseEnd = new Date(state.dataEndDate);
+      // Midnight today
+      const todayStart = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0);
+      
+      const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+      const yesterdayEnd = new Date(todayStart.getTime() - 1);
+      
+      const sevenDaysStart = new Date(todayStart.getTime() - (6 * 86400000));
+      
+      const periodDays = state.periodWeeks * 7;
+      const periodStart = new Date(todayStart.getTime() - ((periodDays - 1) * 86400000));
+
+      // Update UI labels
+      safeSetText('summary-period-label', `${state.periodWeeks}W`);
+      safeSetText('summary-period-title', `${periodDays} Days`);
+
+      // 'days' divisor is 1 for 'Today' to show the absolute daily accumulation so far. 
+      renderStats('td', calcStatsForPeriod(todayStart, baseEnd), 1);
+      renderStats('yd', calcStatsForPeriod(yesterdayStart, yesterdayEnd), 1);
+      renderStats('7d', calcStatsForPeriod(sevenDaysStart, baseEnd), 7);
+      renderStats('pw', calcStatsForPeriod(periodStart, baseEnd), periodDays);
+    }
+
+    // --- STREAMING_CHUNK:Data Fetching ---
+    async function fetchData() {
+      const urlBase = state.url.trim().replace(/\/$/, '');
+      if(!urlBase) return;
+      
+      showLoading();
+      
+      const now = new Date();
+      // Set end to the very end of today
+      const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      
+      // 最大選択可能な期間(12週)のさらに2倍(Previous用)のデータを一括で取得する
+      const MAX_PERIOD_WEEKS = 12;
+      const totalDaysToFetch = MAX_PERIOD_WEEKS * 7 * 2;
+      const startDate = new Date(endDate.getTime() - totalDaysToFetch * 86400000 + 1);
+      
+      const buildQs = (path, dateField) => {
+         let base = `${urlBase}${path}?find[${dateField}][$gte]=${startDate.toISOString()}&find[${dateField}][$lte]=${endDate.toISOString()}&count=100000`;
+         if (state.token) base += `&token=${encodeURIComponent(state.token)}`;
+         return base;
+      };
+      
+      try {
+        let profilePath = `${urlBase}/api/v1/profile.json`;
+        if (state.token) profilePath += `?token=${encodeURIComponent(state.token)}`;
+        
+        // *Crucial Fix*: Use 'created_at' for treatments API endpoint
+        const [rawEntries, rawTreats, profiles] = await Promise.all([
+           fetch(buildQs('/api/v1/entries.json', 'dateString'), { headers: { Accept: 'application/json' }}).then(r => r.json()),
+           fetch(buildQs('/api/v1/treatments.json', 'created_at'), { headers: { Accept: 'application/json' }}).then(r => r.json()),
+           fetch(profilePath, { headers: { Accept: 'application/json' }}).then(r => r.json())
+        ]);
+        
+        // Map and clean entries
+        state.entries = rawEntries.map(d => ({
+           date: new Date(d.dateString || d.date).getTime(),
+           sgv: Number(d.sgv ?? d.glucose ?? d.value)
+        })).filter(d => Number.isFinite(d.sgv) && d.sgv > 0).sort((a,b) => a.date - b.date);
+        
+        // Save treatments
+        state.treatments = Array.isArray(rawTreats) ? rawTreats : [];
+        
+        // Extract default profile
+        if (Array.isArray(profiles) && profiles.length > 0) {
+           const defaultName = profiles[0].defaultProfile;
+           state.profile = profiles[0].store?.[defaultName] || null;
+        }
+
+        state.dataEndDate = endDate.getTime();
+        state.dataStartDate = startDate.getTime();
+        
+        // Reset selected date to today (0:00 of latest date)
+        state.selectedDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0, 0).getTime();
+        
+        hideLoading();
+        updateAllDashboards();
+        
+      } catch (err) {
+        console.error(err);
+        hideLoading();
+        alert("Failed to fetch data from Nightscout. Please verify your URL and Token.");
+        showModal(true);
+      }
+    }
+
+    // --- STREAMING_CHUNK:Chart Rendering ---
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.font.family = 'Inter, sans-serif';
+
+    function getTargetAnnotation() {
+      const yMax = state.targetMode === 'titr' ? 140 : 180;
+      return {
+        type: 'box',
+        yMin: 70, yMax: yMax,
+        backgroundColor: 'rgba(74, 222, 128, 0.08)',
+        borderWidth: 0,
+        drawTime: 'beforeDatasetsDraw'
+      };
+    }
+
+    function getDotColor(ctx) {
+      const y = ctx.raw?.y;
+      const yMax = state.targetMode === 'titr' ? 140 : 180;
+      if (y < 70) return '#f87171'; // Red
+      if (y > yMax) return '#facc15'; // Yellow
+      return '#4ade80'; // Green
+    }
+
+    // Y軸にターゲット値(70と180等)を強制挿入するヘルパー
+    function addTargetTicks(axis) {
+       const yMax = state.targetMode === 'titr' ? 140 : 180;
+       if (!axis.ticks.find(t => t.value === 70)) axis.ticks.push({ value: 70 });
+       if (!axis.ticks.find(t => t.value === yMax)) axis.ticks.push({ value: yMax });
+       axis.ticks.sort((a, b) => a.value - b.value);
+    }
+    function getTickFont(ctx) {
+       const yMax = state.targetMode === 'titr' ? 140 : 180;
+       return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? { size: 10, weight: '900' } : { size: 9, weight: 'bold' };
+    }
+    function getTickColor(ctx) {
+       const yMax = state.targetMode === 'titr' ? 140 : 180;
+       return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? '#4ade80' : 'rgba(148, 163, 184, 0.7)';
+    }
+
+    function renderCGMChart(canvasId, entries, timeStart, timeEnd) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      const dataPoints = entries.map(e => ({ x: e.date, y: e.sgv }));
+      const maxDataY = dataPoints.length ? Math.max(...dataPoints.map(d=>d.y)) : 180;
+      
+      if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+      
+      chartInstances[canvasId] = new Chart(ctx, {
+        type: 'scatter',
+        data: {
+          datasets: [{
+             data: dataPoints,
+             backgroundColor: getDotColor,
+             pointRadius: 2.5,
+             borderWidth: 0
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false,
+          plugins: {
+            legend: { display: false }, tooltip: { enabled: false },
+            annotation: { annotations: { target: getTargetAnnotation() } }
+          },
+          layout: { padding: { left: 5, right: 10, top: 10, bottom: 0 } },
+          scales: {
+            x: {
+              type: 'time', min: timeStart, max: timeEnd,
+              time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
+              grid: { color: 'rgba(51,65,85,0.4)' },
+              ticks: { font: { size: 10, weight: 'bold' } }
+            },
+            y: {
+              min: 40, max: Math.max(250, maxDataY + 20),
+              grid: { color: 'rgba(51,65,85,0.4)' },
+              afterBuildTicks: addTargetTicks,
+              ticks: { font: getTickFont, color: getTickColor }
+            }
+          }
+        }
+      });
+    }
+
+    function buildAgpData(entries) {
+      const slots = Array.from({ length: 48 }, () => []);
+      entries.forEach(e => {
+        const d = new Date(e.date);
+        const slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
+        if (slot >= 0 && slot < 48) slots[slot].push(e.sgv);
+      });
+      
+      const p = { p10: [], p25: [], p50: [], p75: [], p90: [], times: [] };
+      for (let i = 0; i <= 48; i++) {
+        const idx = i === 48 ? 0 : i;
+        const data = [...slots[idx]].sort((a, b) => a - b);
+        p.times.push(i * 0.5); // 0.0 to 24.0
+        
+        if (!data.length) { 
+          p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null); 
+          continue; 
+        }
+        
+        const getPercentile = q => { 
+          const pos = (data.length - 1) * q; 
+          const base = Math.floor(pos); 
+          const rest = pos - base; 
+          return data[base + 1] !== undefined ? data[base] + rest * (data[base + 1] - data[base]) : data[base]; 
+        };
+        
+        p.p10.push(getPercentile(0.10)); p.p25.push(getPercentile(0.25)); p.p50.push(getPercentile(0.50)); p.p75.push(getPercentile(0.75)); p.p90.push(getPercentile(0.90));
+      }
+      return p;
+    }
+
+    function renderAGPChart(canvasId, entries) {
+      const ctx = document.getElementById(canvasId).getContext('2d');
+      const agpData = buildAgpData(entries);
+      
+      if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+      
+      chartInstances[canvasId] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: agpData.times,
+          datasets: [
+            { data: agpData.p10, fill: false, borderWidth: 0, pointRadius: 0, tension: 0.3 },
+            { data: agpData.p25, fill: '-1', backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+            { data: agpData.p75, fill: '-1', backgroundColor: 'rgba(74,222,128,0.5)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+            { data: agpData.p90, fill: '-1', backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+            { data: agpData.p50, fill: false, borderColor: 'rgba(74,222,128,1)', borderWidth: 2.5, pointRadius: 0, tension: 0.3 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: false, spanGaps: true,
+          plugins: {
+            legend: { display: false }, tooltip: { enabled: false },
+            annotation: { annotations: { target: getTargetAnnotation() } }
+          },
+          layout: { padding: { left: 5, right: 10, top: 10, bottom: 0 } },
+          scales: {
+            x: {
+              type: 'linear', min: 0, max: 24,
+              ticks: { stepSize: 3, callback: v => `${v}:00`, font: { size: 10, weight: 'bold' } },
+              grid: { color: 'rgba(51,65,85,0.4)' }
+            },
+            y: {
+              min: 40, max: 300,
+              grid: { color: 'rgba(51,65,85,0.4)' },
+              afterBuildTicks: addTargetTicks,
+              ticks: { font: getTickFont, color: getTickColor }
+            }
+          }
+        }
+      });
+    }
+
+    // --- STREAMING_CHUNK:Dashboard Updaters ---
+    function updateTL() {
+      const start = state.selectedDate;
+      const end = start + 86400000 - 1;
+      
+      const stats = calcStatsForPeriod(new Date(start), new Date(end));
+      document.getElementById('tl-date').textContent = formatShortDate(start);
+      // Math.roundを使用
+      document.getElementById('tl-score').textContent = Math.round(stats.tirScore).toString();
+      
+      const dayEntries = state.entries.filter(e => e.date >= start && e.date <= end);
+      renderCGMChart('tl-chart', dayEntries, start, end);
+    }
+
+    function findBestDay() {
+      const searchEnd = new Date(state.dataEndDate);
+      const searchStart = new Date(searchEnd.getTime() - (state.periodWeeks * 7 * 86400000) + 1);
+      searchStart.setHours(0,0,0,0);
+      
+      let bestScore = -1;
+      let bestDate = null;
+      let bestEntries = [];
+      
+      const todayMs = new Date(searchEnd.getFullYear(), searchEnd.getMonth(), searchEnd.getDate(), 0, 0, 0, 0).getTime();
+      
+      for(let ms = searchStart.getTime(); ms <= searchEnd.getTime(); ms += 86400000) {
+         if (ms === todayMs) continue; // Exclude today from Best Day search
+
+         const dayEnd = ms + 86400000 - 1;
+         const stats = calcStatsForPeriod(new Date(ms), new Date(dayEnd));
+         const dayEntries = state.entries.filter(e => e.date >= ms && e.date <= dayEnd);
+         
+         if(dayEntries.length < 144) continue; // Skip incomplete days
+         
+         if(stats.tirScore > bestScore) {
+            bestScore = stats.tirScore;
+            bestDate = ms;
+            bestEntries = dayEntries;
+         }
+      }
+      return { date: bestDate, entries: bestEntries, score: bestScore };
+    }
+
+    function updateTR() {
+      const best = findBestDay();
+      document.getElementById('tr-period-badge').textContent = `${state.periodWeeks}W`;
+      
+      if(!best.date) {
+         document.getElementById('tr-date').textContent = '--/--';
+         document.getElementById('tr-score').textContent = '--';
+         if(chartInstances['tr-chart']) chartInstances['tr-chart'].destroy();
+         return;
+      }
+      
+      document.getElementById('tr-date').textContent = formatShortDate(best.date);
+      // Math.roundを使用
+      document.getElementById('tr-score').textContent = Math.round(best.score).toString();
+      renderCGMChart('tr-chart', best.entries, best.date, best.date + 86400000 - 1);
+    }
+
+    function getAgpPeriodInfo(isCurrent, is1w) {
+      // 常に最新の日付（state.dataEndDateを含む日の終わり）を基準に固定する
+      const baseEndObj = new Date(state.dataEndDate);
+      const latestDayEndMs = new Date(baseEndObj.getFullYear(), baseEndObj.getMonth(), baseEndObj.getDate(), 23, 59, 59, 999).getTime();
+
+      const daysCount = is1w ? 7 : (state.periodWeeks * 7);
+      const durationMs = daysCount * 86400000;
+      
+      if (isCurrent) {
+         const end = latestDayEndMs;
+         const start = end - durationMs + 1;
+         return { start, end };
+      } else {
+         const currentStart = latestDayEndMs - durationMs + 1;
+         const end = currentStart - 1;
+         const start = end - durationMs + 1;
+         return { start, end };
+      }
+    }
+
+    function drawAgpPanelData(isCurrent, is1w) {
+       const span = getAgpPeriodInfo(isCurrent, is1w);
+       const stats = calcStatsForPeriod(new Date(span.start), new Date(span.end));
+       const entries = state.entries.filter(e => e.date >= span.start && e.date <= span.end);
+       
+       const prefix = isCurrent ? 'bl' : 'br';
+       const suffix = is1w ? '1w' : 'full';
+       
+       safeSetText(`${prefix}-date-range-${suffix}`, `${formatShortDate(span.start)} - ${formatShortDate(span.end)}`);
+       
+       safeSetText(`${prefix}-avg-${suffix}`, stats.mean > 0 ? Math.round(stats.mean) : '--');
+       safeSetText(`${prefix}-cv-${suffix}`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+       safeSetText(`${prefix}-gmi-${suffix}`, stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
+       safeSetText(`${prefix}-adj-${suffix}`, stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
+       
+       safeSetText(`${prefix}-inrange-${suffix}`, `${stats.tir.toFixed(1)}%`);
+       safeSetText(`${prefix}-score-${suffix}`, Math.round(stats.tirScore).toString());
+       
+       renderAGPChart(`${prefix}-chart-${suffix}`, entries);
+    }
+
+    function updateAGPPanels() {
+      // 1週間と選択期間(Full)のグラフをすべて一度に描画しておく
+      drawAgpPanelData(true, true);
+      drawAgpPanelData(true, false);
+      drawAgpPanelData(false, true);
+      drawAgpPanelData(false, false);
+      toggleAgpVisibility();
+    }
+
+    function toggleAgpVisibility() {
+      const is1w = state.agpPeriodMode === '1w';
+      
+      const toggleElements = (prefix) => {
+         const head1w = document.getElementById(`${prefix}-header-1w`);
+         const headFull = document.getElementById(`${prefix}-header-full`);
+         const cont1w = document.getElementById(`${prefix}-container-1w`);
+         const contFull = document.getElementById(`${prefix}-container-full`);
+         
+         if(is1w) {
+            head1w.classList.remove('hidden'); head1w.classList.add('flex');
+            cont1w.classList.remove('hidden');
+            headFull.classList.add('hidden'); headFull.classList.remove('flex');
+            contFull.classList.add('hidden');
+         } else {
+            headFull.classList.remove('hidden'); headFull.classList.add('flex');
+            contFull.classList.remove('hidden');
+            head1w.classList.add('hidden'); head1w.classList.remove('flex');
+            cont1w.classList.add('hidden');
+         }
+      };
+      
+      toggleElements('bl');
+      toggleElements('br');
+    }
+
+    function updateNavControls() {
+      // Nav Controls
+      const baseEnd = new Date(state.dataEndDate);
+      const latestDayMs = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0).getTime();
+      
+      document.getElementById('btn-next-day').disabled = state.selectedDate >= latestDayMs;
+      document.getElementById('btn-next-day').style.opacity = document.getElementById('btn-next-day').disabled ? '0.3' : '1';
+      
+      const maxDaysNeeded = (state.periodWeeks * 7 * 2); 
+      const minAllowedDate = latestDayMs - (maxDaysNeeded * 86400000) + 1;
+      document.getElementById('btn-prev-day').disabled = (state.selectedDate - 86400000) < minAllowedDate;
+      document.getElementById('btn-prev-day').style.opacity = document.getElementById('btn-prev-day').disabled ? '0.3' : '1';
+    }
+
+    function updateAllDashboards() {
+      if(!state.entries.length) return;
+      
+      calculateSummaries();
+      updateTL();
+      updateTR();
+      updateAGPPanels();
+      updateNavControls();
+    }
+
+    // --- STREAMING_CHUNK:Initialization & Events ---
+    function updateTargetToggleUI() {
+      const label = document.getElementById('header-target-label');
+      if (label) label.textContent = state.targetMode.toUpperCase();
+      const select = document.getElementById('target-mode');
+      if (select) select.value = state.targetMode;
+    }
+
+    function updatePeriodToggleUI() {
+      const select = document.getElementById('period-weeks');
+      if (select) select.value = state.periodWeeks.toString();
+      
+      document.querySelectorAll('.period-btn').forEach(btn => {
+        const w = parseInt(btn.dataset.weeks, 10);
+        if (w === state.periodWeeks) {
+          btn.classList.add('bg-slate-600', 'text-white', 'shadow');
+          btn.classList.remove('text-slate-300', 'hover:text-white');
+        } else {
+          btn.classList.remove('bg-slate-600', 'text-white', 'shadow');
+          btn.classList.add('text-slate-300', 'hover:text-white');
+        }
+      });
+    }
+
+    document.getElementById('btn-open-settings').addEventListener('click', () => showModal(false));
+    document.getElementById('btn-close-settings').addEventListener('click', hideModal);
+    
+    document.getElementById('btn-save-settings').addEventListener('click', () => {
+      const newUrl = document.getElementById('ns-url').value;
+      const newToken = document.getElementById('ns-token').value;
+      const newTargetMode = document.getElementById('target-mode').value;
+      const newPeriodWeeks = parseInt(document.getElementById('period-weeks').value, 10);
+
+      const requiresFetch = (state.url !== newUrl) || (state.token !== newToken);
+
+      state.url = newUrl;
+      state.token = newToken;
+      state.targetMode = newTargetMode;
+      state.periodWeeks = newPeriodWeeks;
+      
+      localStorage.setItem('ns_url', state.url);
+      localStorage.setItem('ns_token', state.token);
+      localStorage.setItem('ns_targetMode', state.targetMode);
+      localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+      
+      document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+      document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+      
+      updateTargetToggleUI();
+      updatePeriodToggleUI();
+      hideModal();
+
+      if (requiresFetch) {
+        fetchData();
+      } else {
+        // Only target mode or period changed, avoid unnecessary API fetch
+        if (state.entries.length > 0) {
+           updateAllDashboards();
+        }
+      }
+    });
+
+    document.getElementById('btn-toggle-target').addEventListener('click', () => {
+       state.targetMode = state.targetMode === 'tir' ? 'titr' : 'tir';
+       localStorage.setItem('ns_targetMode', state.targetMode);
+       updateTargetToggleUI();
+       if (state.entries.length > 0) {
+          updateAllDashboards();
+       }
+    });
+
+    document.querySelectorAll('.period-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const newWeeks = parseInt(e.currentTarget.dataset.weeks, 10);
+        if (state.periodWeeks === newWeeks) return;
+        
+        state.periodWeeks = newWeeks;
+        localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+        
+        document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+        document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+        
+        updatePeriodToggleUI();
+        
+        if (state.entries.length > 0) {
+          updateAllDashboards();
+        }
+      });
+    });
+
+    function toggleAgpPeriod() {
+       state.agpPeriodMode = state.agpPeriodMode === '1w' ? 'full' : '1w';
+       toggleAgpVisibility();
+    }
+
+    document.getElementById('btn-prev-day').addEventListener('click', () => {
+       if(!state.entries.length) return;
+       state.selectedDate -= 86400000;
+       updateTL();         // Selected DayのCGMのみ更新
+       updateNavControls(); // ボタンの活性状態のみ更新
+    });
+    
+    document.getElementById('btn-next-day').addEventListener('click', () => {
+       if(!state.entries.length) return;
+       state.selectedDate += 86400000;
+       updateTL();         // Selected DayのCGMのみ更新
+       updateNavControls(); // ボタンの活性状態のみ更新
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+       updateTargetToggleUI();
+       updatePeriodToggleUI();
+       if (!state.url) {
+          showModal(true);
+       } else {
+          document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+          document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+          fetchData();
+       }
+    });
+
+    window.addEventListener('resize', () => {
+       Object.values(chartInstances).forEach(chart => {
+          if (chart) chart.resize();
+       });
+    });
+
+  </script>
+</body>
+</html>
