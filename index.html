@@ -546,8 +546,9 @@
         this.lowThreshold = config.lowThreshold || 70;
         this.highThreshold = config.highThreshold || 180;
         this.veryHighThreshold = config.veryHighThreshold || 250;
-        this.penaltyHigh = config.penaltyHigh || 0.006;
-        this.penaltyVeryHigh = config.penaltyVeryHigh || 0.012;
+        // ペナルティ係数をより臨床的な変動リスク（SD/CV）と相関するように調整
+        this.penaltyHigh = config.penaltyHigh || 0.005;
+        this.penaltyVeryHigh = config.penaltyVeryHigh || 0.010;
       }
       _extractValues(rawData) {
         if (!Array.isArray(rawData)) return [];
@@ -558,16 +559,43 @@
       analyze(glucoseData) {
         const values = this._extractValues(glucoseData);
         if (values.length === 0) return { adjustedGmi: 0, gmi: 0 };
+        
         const total = values.length;
         const mean = values.reduce((acc, val) => acc + val, 0) / total;
+        
+        // 通常のGMI (標準式)
+        const gmi = 3.31 + 0.02392 * mean;
+
+        // --- Adj (調整GMI) の高精度化ロジック ---
         const tar = values.filter(v => v > this.highThreshold).length / total * 100;
         const vTar = values.filter(v => v > this.veryHighThreshold).length / total * 100;
-        const gmi = 3.31 + 0.02392 * mean;
+        const tbr = values.filter(v => v < this.lowThreshold).length / total * 100;
+
+        // 1. 低血糖を完全に除外するのではなく、スパイク（急激な乱高下）を評価するため、
+        // 標準偏差（SD）と血糖変動係数（CV）要素を組み込みます。
+        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
+        const cv = mean > 0 ? (sd / mean) * 100 : 0;
+
+        // 2. 基本となるベース血糖値（低血糖を除外した平均）
         const nonLowValues = values.filter(v => v >= this.lowThreshold);
         const nonLowMean = nonLowValues.length ? nonLowValues.reduce((a, b) => a + b, 0) / nonLowValues.length : mean;
-        const base = 3.31 + 0.02392 * nonLowMean;
-        const adjustedGmi = base + tar * this.penaltyHigh + vTar * this.penaltyVeryHigh;
-        return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
+        let baseGmi = 3.31 + 0.02392 * nonLowMean;
+
+        // 3. 乱高下（CV > 36% が臨床的な不安定の閾値）および低血糖頻度（TBR）に応じた動的ペナルティ
+        // 変動が激しい、または低血糖を回避するためにインスリン設定（CR/ISF）が歪んでいる可能性をAdjに反映
+        const variabilityFactor = cv > 36 ? (cv - 36) * 0.01 : 0;
+        const hypoRiskFactor = tbr * 0.015; // 低血糖がある場合は、インスリン過剰 or タイミングズレのペナルティ
+
+        const adjustedGmi = baseGmi + 
+                            (tar * this.penaltyHigh) + 
+                            (vTar * this.penaltyVeryHigh) + 
+                            variabilityFactor + 
+                            hypoRiskFactor;
+
+        return { 
+          adjustedGmi: Number(adjustedGmi.toFixed(2)), 
+          gmi: Number(gmi.toFixed(2)) 
+        };
       }
     }
 
