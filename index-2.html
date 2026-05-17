@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Nightscout Dashboard Stable</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --panel-bg: rgba(15, 23, 42, 0.82);
+      --panel-border: rgba(71, 85, 105, 0.45);
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100dvh;
+      overflow: hidden;
+      background: #000;
+      color: #e2e8f0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+
+    body.dimmed {
+      opacity: 0.82;
+    }
+
+    #shift-container {
+      width: 100%;
+      height: 100%;
+      transition: transform 1s ease-in-out;
+      will-change: transform;
+    }
+
+    #grid-container {
+      display: grid;
+      gap: 0.5rem;
+      padding: 0.5rem;
+      height: 100%;
+      width: 100%;
+      box-sizing: border-box;
+      transition: grid-template-rows 800ms ease-in-out;
+    }
+
+    .layout-pattern-0 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(310px, 42%) 1fr;
+      grid-template-areas:
+        "current summary"
+        "graph graph";
+    }
+
+    .layout-pattern-1 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(310px, 42%) 1fr;
+      grid-template-areas:
+        "summary current"
+        "graph graph";
+    }
+
+    .layout-pattern-2 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr minmax(310px, 42%);
+      grid-template-areas:
+        "graph graph"
+        "current summary";
+    }
+
+    .layout-pattern-3 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr minmax(310px, 42%);
+      grid-template-areas:
+        "graph graph"
+        "summary current";
+    }
+
+    @media (max-width: 768px) {
+      #grid-container {
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+      }
+
+      .area-graph {
+        min-height: 230px;
+        flex: 1;
+      }
+
+      .area-current {
+        min-height: 180px;
+      }
+
+      .area-summary {
+        min-height: 240px;
+      }
+
+      .panel {
+        flex: none;
+      }
+    }
+
+    .area-current {
+      grid-area: current;
+    }
+
+    .area-summary {
+      grid-area: summary;
+    }
+
+    .area-graph {
+      grid-area: graph;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .panel {
+      background-color: var(--panel-bg);
+      border-radius: 0.75rem;
+      border: 1px solid var(--panel-border);
+      padding: 0.5rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .chart-tooltip {
+      background: rgba(15, 23, 42, 0.96);
+      border-radius: 8px;
+      color: white;
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+      transition: opacity .12s ease, left .08s ease, top .08s ease;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(71, 85, 105, 0.6);
+      padding: 8px 12px;
+      min-width: 120px;
+    }
+  </style>
+</head>
+
+<body class="select-none text-slate-200">
+
+  <div id="shift-container">
+    <div id="grid-container" class="layout-pattern-0">
+
+      <!-- Left / Right Panel: Current BG Indicator -->
+      <div id="current-panel" class="panel area-current relative flex flex-col justify-center items-center px-2">
+        <div class="absolute top-2 right-2 flex gap-1 z-10">
+          <button id="btn-fullscreen"
+            class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50" aria-label="fullscreen">
+            <i data-lucide="maximize" class="w-4 h-4"></i>
+          </button>
+          <button id="btn-settings" class="text-slate-400 hover:text-white transition p-1.5 rounded-lg bg-slate-800/50"
+            aria-label="settings">
+            <i data-lucide="settings" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="absolute top-2 left-2 flex flex-col items-start z-10">
+          <div class="text-[12px] text-blue-400 font-bold uppercase tracking-wider bg-black/30 px-1 rounded"
+            id="last-update-time">Loading...</div>
+          <div class="text-[10px] text-slate-400 font-medium" id="sync-time">Sync: --:--</div>
+        </div>
+
+        <div id="current-normal-view" class="flex-1 flex w-full h-full">
+          <div class="flex-1 flex w-full h-full items-center justify-center mt-3 gap-2 sm:gap-6 relative">
+            <div class="flex flex-col items-center justify-center flex-shrink-0">
+              <div class="flex items-center gap-2 sm:gap-4">
+                <div id="current-bg"
+                  class="text-[4.5rem] xs:text-[5.5rem] sm:text-[7rem] md:text-[8rem] lg:text-[9rem] font-black tabular-nums tracking-tighter leading-none"
+                  style="text-shadow:0 0 20px rgba(0,0,0,0.5);">---</div>
+                <div id="trend-arrow"
+                  class="text-[3.5rem] xs:text-[4rem] sm:text-[5rem] md:text-[6rem] lg:text-[7rem] font-black leading-none"
+                  style="text-shadow:0 0 10px rgba(0,0,0,0.5);"></div>
+              </div>
+              <div id="bg-delta" class="text-xl lg:text-3xl text-slate-300 mt-1 font-bold">--</div>
+            </div>
+
+            <div class="flex flex-col gap-2 flex-shrink-0">
+              <div
+                class="bg-blue-900/40 border border-blue-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
+                <span class="text-[11px] font-bold text-blue-300 uppercase tracking-wider mb-0.5">IOB</span>
+                <div class="text-xl sm:text-2xl font-black text-white leading-none"><span
+                    id="current-iob">--</span><span class="text-[12px] font-normal ml-0.5 text-blue-200">U</span></div>
+              </div>
+              <div
+                class="bg-yellow-900/40 border border-yellow-500/50 rounded flex flex-col items-center justify-center py-1.5 px-3 sm:px-4 shadow-lg">
+                <span class="text-[11px] font-bold text-yellow-400 uppercase tracking-wider mb-0.5">COB</span>
+                <div class="text-xl sm:text-2xl font-black text-white leading-none"><span
+                    id="current-cob">--</span><span class="text-[12px] font-normal ml-0.5 text-yellow-200">g</span>
+                </div>
+              </div>
+              <div class="flex flex-col text-[11px] text-slate-400 font-bold mt-1 items-end pr-1 gap-0.5">
+                <span>Res: <span id="current-res" class="text-slate-200">--</span></span>
+                <span>CAGE: <span id="current-cage" class="text-slate-200">--</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="error-message"
+          class="absolute bottom-2 text-red-400 text-xs hidden text-center bg-red-900/80 px-3 py-1 rounded-full w-3/4 max-w-xs border border-red-500">
+        </div>
+      </div>
+
+      <!-- Statistical & AGP Summary Panel -->
+      <div class="panel area-summary cursor-pointer relative group flex flex-col min-h-0" id="summary-panel">
+        <div
+          class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition duration-300 text-[10px] font-bold text-slate-300 bg-slate-700/80 px-2 py-1 rounded shadow-lg pointer-events-none z-50 border border-slate-600">
+          Tap to toggle AGP
+        </div>
+
+        <div class="flex-1 flex gap-2 sm:gap-3 min-h-0 w-full h-full">
+          <!-- Left: TIR representation -->
+          <div
+            class="w-20 sm:w-24 bg-slate-800/60 rounded border border-slate-600/50 p-1 flex flex-col items-center justify-between min-h-0 flex-none shadow-inner">
+            <div class="text-[12px] font-black text-green-400 tracking-widest leading-none mt-0.5 mb-1">TIR</div>
+            <div class="flex justify-around w-full px-1 mb-1 flex-none">
+              <span class="text-[11px] font-bold text-slate-200">TD</span>
+              <span class="text-[11px] font-bold text-slate-400">7D</span>
+            </div>
+            <div class="flex-1 flex justify-around w-full items-end pb-1 min-h-0">
+              <div class="flex flex-col items-center h-full w-3 sm:w-4">
+                <div
+                  class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700">
+                  <div id="td-tar" class="bg-yellow-400 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="td-tir" class="bg-green-400 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="td-tbr" class="bg-red-500 w-full transition-all duration-700" style="height:0%"></div>
+                </div>
+                <span id="td-tir-val"
+                  class="text-[11px] sm:text-sm font-black text-green-400 mt-1.5 leading-none">0%</span>
+              </div>
+              <div class="flex flex-col items-center h-full w-3 sm:w-4 opacity-80">
+                <div
+                  class="w-full flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end shadow-inner border border-slate-700">
+                  <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="7d-tir" class="bg-green-500 w-full transition-all duration-700" style="height:0%"></div>
+                  <div id="7d-tbr" class="bg-red-600 w-full transition-all duration-700" style="height:0%"></div>
+                </div>
+                <span id="7d-tir-val"
+                  class="text-[11px] sm:text-sm font-black text-green-500 mt-1.5 leading-none">0%</span>
+              </div>
+            </div>
+            <div class="w-full border-t border-slate-700/60 mt-1 pt-1 flex-none">
+              <div class="text-[9px] font-black text-slate-400 tracking-widest text-center leading-none mb-1">TIR SCORE
+              </div>
+              <div class="flex justify-around w-full items-center leading-none">
+                <span id="td-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-300">0</span>
+                <span id="7d-tir-score" class="text-[12px] sm:text-sm font-black text-emerald-500/90">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Details and AGPs -->
+          <div class="flex-1 flex flex-col min-h-0 relative">
+            <div id="summary-default" class="flex flex-col min-h-0 w-full h-full">
+              <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-1.5 flex-none pl-1">
+                <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Summary
+              </h2>
+
+              <div
+                class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 py-1.5 min-h-0 justify-center gap-1.5 overflow-y-auto">
+                <div class="grid grid-cols-[auto_1fr_1fr] items-end border-b border-slate-600/50 pb-0.5 flex-none">
+                  <div class="w-16 sm:w-20"></div>
+                  <div
+                    class="text-center text-[12px] sm:text-[14px] font-black text-white tracking-widest leading-none">
+                    Today</div>
+                  <div
+                    class="text-center text-[12px] sm:text-[14px] font-bold text-slate-400 tracking-widest leading-none">
+                    7 Days</div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center">
+                  <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-slate-300 font-bold uppercase">AVG BG</div>
+                  <div class="text-center font-black text-white text-xl sm:text-2xl leading-none">
+                    <span id="td-mean">0</span><span class="text-[11px] font-normal text-slate-400 ml-0.5">mg/dL</span>
+                  </div>
+                  <div class="text-center font-bold text-slate-400 text-xl sm:text-2xl leading-none">
+                    <span id="7d-mean">0</span>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center border-t border-slate-700/50 pt-1">
+                  <div class="w-16 sm:w-20 flex flex-col leading-none">
+                    <span class="text-[11px] sm:text-[13px] text-pink-400 font-bold uppercase">GMI<span
+                        class="text-slate-500 mx-0.5">/</span>Adj</span>
+                  </div>
+                  <div
+                    class="text-center font-black text-pink-300 text-base sm:text-lg leading-none flex items-center justify-center gap-0.5">
+                    <span id="td-gmi">0.0</span><span
+                      class="text-[10px] text-pink-500/80 font-normal mr-0.5">%</span><span
+                      class="text-[10px] text-slate-400 font-normal">/</span><span id="td-ea1c"
+                      class="text-pink-200">0.0</span><span class="text-[10px] text-pink-400/80 font-normal">%</span>
+                  </div>
+                  <div
+                    class="text-center font-bold text-pink-500/80 text-base sm:text-lg leading-none flex items-center justify-center gap-0.5">
+                    <span id="7d-gmi">0.0</span><span class="text-[10px] text-slate-600 font-normal">/</span><span
+                      id="7d-ea1c">0.0</span>
+                  </div>
+                </div>
+
+                <div class="flex flex-col bg-blue-900/20 rounded py-1 px-1 border border-blue-800/30">
+                  <div class="grid grid-cols-[auto_1fr_1fr] items-center mb-0.5">
+                    <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-blue-400 font-bold pl-1 uppercase">TDD
+                    </div>
+                    <div class="text-center font-black text-blue-200 text-lg sm:text-xl leading-none"><span
+                        id="td-tdd">0.0</span><span class="text-[11px] font-normal text-blue-400 ml-0.5">U</span></div>
+                    <div class="text-center font-bold text-blue-400/80 text-lg sm:text-xl leading-none"><span
+                        id="7d-tdd">0.0</span></div>
+                  </div>
+                  <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 px-1">
+                    <div class="w-16 sm:w-20"></div>
+                    <div class="flex h-2 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50">
+                      <div id="td-basal-bar" class="bg-slate-400 h-full"></div>
+                      <div id="td-cb-bar" class="bg-purple-400 h-full"></div>
+                      <div id="td-bolus-bar" class="bg-cyan-400 h-full"></div>
+                    </div>
+                    <div
+                      class="flex h-2 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-60">
+                      <div id="7d-basal-bar" class="bg-slate-400 h-full"></div>
+                      <div id="7d-cb-bar" class="bg-purple-400 h-full"></div>
+                      <div id="7d-bolus-bar" class="bg-cyan-400 h-full"></div>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-[auto_1fr_1fr] items-center gap-x-2 px-1 mt-1.5">
+                    <div class="w-16 sm:w-20"></div>
+                    <div class="flex justify-between px-0.5">
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-slate-400 mb-0.5">Basal</div>
+                        <div id="td-basal" class="text-[11px] sm:text-[12px] font-bold text-slate-200">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-purple-400 mb-0.5">CB</div>
+                        <div id="td-cb" class="text-[11px] sm:text-[12px] font-bold text-purple-200">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-cyan-400 mb-0.5">Bolus</div>
+                        <div id="td-bolus" class="text-[11px] sm:text-[12px] font-bold text-cyan-200">0.0</div>
+                      </div>
+                    </div>
+                    <div class="flex justify-between px-0.5 opacity-80">
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-slate-500 mb-0.5">Basal</div>
+                        <div id="7d-basal" class="text-[11px] sm:text-[12px] font-bold text-slate-300">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-purple-500/80 mb-0.5">CB</div>
+                        <div id="7d-cb" class="text-[11px] sm:text-[12px] font-bold text-purple-400">0.0</div>
+                      </div>
+                      <div class="text-center leading-none">
+                        <div class="text-[10px] sm:text-[11px] text-cyan-500/80 mb-0.5">Bolus</div>
+                        <div id="7d-bolus" class="text-[11px] sm:text-[12px] font-bold text-cyan-400">0.0</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center">
+                  <div class="w-16 sm:w-20 text-[12px] sm:text-[14px] text-yellow-400 font-bold uppercase">CARBS</div>
+                  <div class="text-center font-black text-yellow-300 text-lg sm:text-xl leading-none"><span
+                      id="td-carbs">0</span><span class="text-[11px] font-normal text-yellow-500 ml-0.5">g</span></div>
+                  <div class="text-center font-bold text-yellow-500/80 text-lg sm:text-xl leading-none"><span
+                      id="7d-carbs">0</span></div>
+                </div>
+
+                <div class="grid grid-cols-[auto_1fr_1fr] items-center border-t border-slate-700/50 pt-1">
+                  <div class="w-16 sm:w-20 flex flex-col leading-none">
+                    <span class="text-[12px] sm:text-[14px] text-orange-400 font-bold uppercase">EST. CR</span>
+                    <span class="text-[9px] text-orange-500/70 mt-0.5 font-medium">Bolus / +CB</span>
+                  </div>
+                  <div
+                    class="text-center font-black text-orange-200 text-sm sm:text-base flex justify-center gap-1 items-center leading-none">
+                    <span id="td-cr-bolus">0.0</span><span class="text-slate-500 text-[10px] font-medium">/</span><span
+                      id="td-cr-total" class="text-orange-300">0.0</span><span
+                      class="text-[9px] text-orange-500/70 font-normal ml-0.5">g/U</span>
+                  </div>
+                  <div
+                    class="text-center font-bold text-orange-500/80 text-sm sm:text-base flex justify-center gap-1 items-center leading-none">
+                    <span id="7d-cr-bolus">0.0</span><span class="text-slate-600 text-[10px] font-medium">/</span><span
+                      id="7d-cr-total">0.0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Profile and AGP Chart overlays -->
+            <div id="summary-agp" class="hidden absolute inset-0 flex-col min-h-0 w-full h-full">
+              <h2 class="text-sm font-bold text-white mb-1 flex items-center gap-1.5 flex-none pl-1">
+                <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>Profiles <span
+                  class="text-[11px] font-normal text-slate-400">Today vs 7-Days</span>
+              </h2>
+              <div
+                class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 py-1 min-h-0 justify-start gap-1 overflow-y-auto">
+                <div class="flex-1 flex relative w-full border-b border-slate-600/50 min-h-0">
+                  <div class="flex-1 relative min-h-0 p-1"><canvas id="agpProfileChart"></canvas></div>
+                  <div
+                    class="w-12 flex flex-col items-center justify-center border-l border-slate-600/50 flex-none bg-slate-900/40 rounded-tr">
+                    <span class="text-[10px] font-bold text-slate-400 leading-none">CV</span>
+                    <div class="text-sm font-black text-white mt-1 leading-none"><span id="td-cv-agp">--</span><span
+                        class="text-[9px]">%</span></div>
+                  </div>
+                </div>
+                <div class="flex-1 flex relative w-full min-h-0">
+                  <div class="flex-1 relative min-h-0 p-1"><canvas id="agpChart"></canvas></div>
+                  <div
+                    class="w-12 flex flex-col items-center justify-center border-l border-slate-600/50 flex-none bg-slate-900/40 rounded-br">
+                    <span class="text-[10px] font-bold text-slate-400 leading-none">CV</span>
+                    <div class="text-sm font-black text-white mt-1 leading-none"><span id="7d-cv-agp">--</span><span
+                        class="text-[9px]">%</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Interactive Main Trend Graph Area -->
+      <div class="panel area-graph flex flex-col min-h-0 relative">
+        <div class="flex justify-between items-center mb-1 px-1 flex-none relative gap-2">
+          <div class="flex items-center gap-1 min-w-0 flex-none">
+            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition"
+              aria-label="previous day">
+              <i data-lucide="chevron-left" class="w-4 h-4"></i>
+            </button>
+            <div id="chart-date-label"
+              class="min-w-[104px] text-center font-black text-slate-100 text-xs bg-slate-900/80 border border-slate-600/60 rounded px-2 py-1 shadow z-30">
+              today</div>
+            <button id="btn-next"
+              class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed"
+              aria-label="next day" disabled>
+              <i data-lucide="chevron-right" class="w-4 h-4"></i>
+            </button>
+            <button id="btn-today"
+              class="ml-1 px-3 py-1 bg-slate-600 hover:bg-slate-500 text-white shadow rounded text-[11px] font-black transition">Today</button>
+          </div>
+
+          <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium flex-none">
+            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="3">3h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow"
+              data-hours="6">6h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="12">12h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="24">24h</button>
+          </div>
+        </div>
+        
+        <!-- Hover / Day Inspector overlay details -->
+        <div id="selected-day-stats"
+          class="absolute right-3 top-10 hidden md:flex z-20 flex-col gap-1.5 rounded-lg bg-slate-900/90 border border-slate-600/70 px-3 py-2 shadow-xl pointer-events-none min-w-[168px]">
+          <div id="selected-day-title" class="text-[10px] font-black text-slate-300 tracking-widest text-right">DAY
+          </div>
+          <div class="flex flex-col items-stretch gap-1.5">
+            <div class="flex items-end justify-between leading-none">
+              <span class="text-[10px] font-black text-green-400 tracking-widest">TIR</span>
+              <span id="selected-day-tir" class="text-2xl font-black text-green-400 leading-none">--%</span>
+            </div>
+            <div class="h-2.5 w-full rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 flex">
+              <div id="selected-day-tbr-bar" class="bg-red-500 h-full" style="width:0%"></div>
+              <div id="selected-day-tir-bar" class="bg-green-400 h-full" style="width:0%"></div>
+              <div id="selected-day-tar-bar" class="bg-yellow-400 h-full" style="width:0%"></div>
+            </div>
+            <div class="flex items-center justify-between border-b border-slate-700/60 pb-1">
+              <span class="text-[10px] font-bold text-emerald-300 tracking-widest">Score</span>
+              <span id="selected-day-tir-score" class="text-lg font-black text-emerald-300 leading-none">--</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-right pt-0.5">
+            <span class="text-[10px] font-bold text-slate-300 text-left">AVG</span>
+            <span><span id="selected-day-avg" class="text-sm font-black text-white">--</span><span
+                class="text-[9px] text-slate-500 ml-0.5">mg/dL</span></span>
+            <span class="text-[10px] font-bold text-pink-300 text-left">GMI / ADJ</span>
+            <span><span id="selected-day-gmi" class="text-sm font-black text-pink-300">--</span><span
+                class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-adj"
+                class="text-sm font-black text-pink-200">--</span></span>
+            <span class="text-[10px] font-bold text-yellow-400 text-left">CARBS</span>
+            <span><span id="selected-day-carbs" class="text-sm font-black text-yellow-300">--</span><span
+                class="text-[9px] text-slate-500 ml-0.5">g</span></span>
+            <span class="text-[10px] font-bold text-orange-400 text-left">CR</span>
+            <span><span id="selected-day-cr-bolus" class="text-sm font-black text-orange-200">--</span><span
+                class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-cr-total"
+                class="text-sm font-black text-orange-300">--</span></span>
+          </div>
+        </div>
+        <div
+          class="absolute right-3 top-10 text-[10px] text-right pointer-events-none hidden md:flex z-10 flex-col items-end gap-0.5">
+          <div class="text-blue-400 font-bold">Basal (U/h)</div>
+          <div class="text-sky-400 font-bold">IOB (U)</div>
+        </div>
+        <div class="flex-1 relative w-full h-full min-h-0">
+          <canvas id="bgChart"></canvas>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Settings popup dialog -->
+  <div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/60">
+    <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-600">
+      <h2 class="text-xl font-black mb-4 text-white flex items-center gap-2"><i data-lucide="settings"
+          class="w-5 h-5"></i>Settings</h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm font-bold text-slate-300 mb-1">Nightscout URL</label>
+          <input type="text" id="ns-url" placeholder="https://your-site.example.com"
+            class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
+        </div>
+        <div>
+          <label class="block text-sm font-bold text-slate-300 mb-1">Nightscout Read Token</label>
+          <input type="password" id="ns-secret" placeholder="readable token"
+            class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
+          <p class="mt-1 text-[11px] text-slate-400">読み取り専用tokenのみを使用します。API_SECRETは入力しないでください。</p>
+        </div>
+      </div>
+      <div class="mt-6 flex justify-end gap-3">
+        <button id="btn-cancel-settings"
+          class="px-4 py-2 rounded text-sm text-slate-200 hover:bg-slate-700 transition font-bold">Cancel</button>
+        <button id="btn-save-settings"
+          class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm rounded transition font-black shadow-lg">Save
+          & Connect</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    lucide.createIcons();
+
+    // --- STREAMING_CHUNK:Updating core analytics and insulin calculations... ---
+    // --- Advanced weighted HbA1c & Adjusted GMI Clinical Calculator ---
+    class ClinicalA1cCalculator {
+      constructor(config = {}) {}
+
+      analyze(glucoseData) {
+        // Safe mapping to support both Analytical and Dashboard schemas
+        const validData = glucoseData.map(d => {
+          const v = Number(d.sgv ?? d.glucose ?? d.value);
+          let ms = d.date;
+          if (typeof ms !== 'number') {
+            const raw = d.dateString ?? d.created_at ?? d.date;
+            ms = typeof raw === 'number' ? raw : new Date(raw).getTime();
+          }
+          return { sgv: v, date: ms };
+        }).filter(d => Number.isFinite(d.sgv) && d.sgv > 0 && Number.isFinite(d.date));
+
+        if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
+
+        // Define base target offset as latest record timestamp
+        const latestMs = validData[validData.length - 1].date;
+        
+        let sumWeight = 0;
+        let sumWeightedSgv = 0;       // Standard weighted GMI
+        let sumWeightedEffSgv = 0;    // Adjusted HbA1c with glycation dynamics
+
+        for (let i = 0; i < validData.length; i++) {
+          const d = validData[i];
+          const v = d.sgv;
+          
+          // 1. Exposure time (AUC calculation)
+          let durationMs = 5 * 60 * 1000;
+          if (i > 0) {
+             const prev = validData[i - 1];
+             durationMs = d.date - prev.date;
+             // Bound gap up to 15 min exposure
+             if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
+             if (durationMs < 0) durationMs = 5 * 60 * 1000;
+          }
+
+          // 2. RBC decay factor (120-day half life representation)
+          const ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
+          const rbcWeight = Math.max(0, 1 - (ageDays / 120));
+          const finalWeight = durationMs * rbcWeight;
+
+          sumWeight += finalWeight;
+          sumWeightedSgv += v * finalWeight;
+
+          // 3. Hierarchical glycation models mapping extreme bounds
+          let vEff = v;
+          if (v < 70) {
+            vEff = 70; // Low glucose glycative saturation clip
+          } else if (v >= 70 && v < 100) {
+            vEff = v;
+          } else if (v >= 100 && v < 140) {
+            vEff = v * 1.01;
+          } else if (v >= 140 && v < 180) {
+            vEff = v * 1.04;
+          } else if (v >= 180 && v < 240) {
+            vEff = v * 1.08;
+          } else if (v >= 240 && v < 300) {
+            vEff = v * 1.12;
+          } else if (v >= 300) {
+            vEff = v * 1.16;
+          }
+
+          sumWeightedEffSgv += vEff * finalWeight;
+        }
+
+        if (sumWeight === 0) return { adjustedGmi: 0, gmi: 0 };
+
+        const weightedMean = sumWeightedSgv / sumWeight;
+        const effWeightedMean = sumWeightedEffSgv / sumWeight;
+
+        // Base clinical formula conversions
+        const gmi = 3.31 + 0.02392 * weightedMean;
+        const adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
+        
+        return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
+      }
+    }
+
+    const a1cCalculator = new ClinicalA1cCalculator();
+
+    const CONFIG = {
+      FULL_LOOKBACK_DAYS: 8,
+      DELTA_LOOKBACK_MINUTES: 20,
+      DEVICESTATUS_LOOKBACK_HOURS_FULL: 24,
+      DEVICESTATUS_LOOKBACK_HOURS_DELTA: 3,
+      REFRESH_INTERVAL_MS: 3 * 60 * 1000,
+      AGP_REFRESH_INTERVAL_MS: 15 * 60 * 1000,
+      DATA_RETENTION_DAYS: 8,
+      CHART_POINT_RADIUS: 6
+    };
+
+    const state = {
+      url: localStorage.getItem('ns-url') || '',
+      secret: localStorage.getItem('ns-token') || localStorage.getItem('ns-secret') || '',
+      data: { entries: [], treatments: [], profile: null, devicestatus: [] },
+      timeRangeHours: 6,
+      offsetDays: 0,
+      lastFetchAt: null,
+      lastAgpDrawAt: 0,
+      lastSummaryCalcAt: 0,
+      lastMainChartSignature: '',
+      loadedDeviceStatusDays: new Set(),
+      lastHistoryInteractionAt: 0
+    };
+
+    let chartInstance = null;
+    let agpChartInstance = null;
+    let agpProfileChartInstance = null;
+    let fetchInterval = null;
+    let agpMode = false;
+    let currentLayoutPattern = 0;
+    let idleMinutes = 0;
+
+    const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
+
+    function toTimeMs(obj, field = 'dateString') {
+      const raw = obj?.[field] ?? obj?.dateString ?? obj?.created_at ?? obj?.date;
+      if (typeof raw === 'number') return raw;
+      const ms = new Date(raw).getTime();
+      return Number.isFinite(ms) ? ms : 0;
+    }
+
+    function dateKeyFromDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    function getDayRangeByOffset(offsetDays) {
+      const base = new Date();
+      base.setDate(base.getDate() - offsetDays);
+
+      const start = new Date(base);
+      start.setHours(0, 0, 0, 0);
+
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+
+      return {
+        start,
+        end,
+        key: dateKeyFromDate(start)
+      };
+    }
+
+    async function fetchDeviceStatusForDay(offsetDays) {
+      if (!state.url) return;
+
+      const { start, end, key } = getDayRangeByOffset(offsetDays);
+
+      if (state.loadedDeviceStatusDays.has(key)) {
+        return;
+      }
+
+      safeSetText('last-update-time', `Loading ${key}`);
+
+      const deviceData = await fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
+        'find[created_at][$gte]': start.toISOString(),
+        'find[created_at][$lt]': end.toISOString(),
+        count: 3000
+      }));
+
+      if (Array.isArray(deviceData)) {
+        state.data.devicestatus = mergeByKey(
+          state.data.devicestatus,
+          deviceData,
+          d => d._id || d.created_at
+        ).sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+
+        state.loadedDeviceStatusDays.add(key);
+        hideError();
+      } else {
+        showError(`Failed to load IOB for ${key}`);
+      }
+    }
+
+    function showError(msg) {
+      const errDiv = document.getElementById('error-message');
+      if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); }
+    }
+
+    function hideError() {
+      const errDiv = document.getElementById('error-message');
+      if (errDiv) errDiv.classList.add('hidden');
+    }
+
+    function mergeByKey(existing, incoming, keyFn) {
+      const map = new Map();
+      existing.forEach(item => map.set(keyFn(item), item));
+      incoming.forEach(item => map.set(keyFn(item), item));
+      return Array.from(map.values());
+    }
+
+    function pruneOldData() {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - CONFIG.DATA_RETENTION_DAYS);
+      const cutoffMs = cutoff.getTime();
+      state.data.entries = state.data.entries.filter(e => toTimeMs(e) >= cutoffMs);
+      state.data.treatments = state.data.treatments.filter(t => toTimeMs(t, 'created_at') >= cutoffMs);
+      state.data.devicestatus = state.data.devicestatus.filter(d => toTimeMs(d, 'created_at') >= cutoffMs);
+    }
+
+    function buildEndpoint(path, params = {}) {
+      const usp = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') usp.append(k, v);
+      });
+      const qs = usp.toString();
+      return qs ? `${path}?${qs}` : path;
+    }
+
+    function appendReadToken(endpoint) {
+      const token = (state.secret || '').trim();
+      if (!token) return endpoint;
+      if (/[?&]token=/.test(endpoint)) return endpoint;
+      const separator = endpoint.includes('?') ? '&' : '?';
+      return `${endpoint}${separator}token=${encodeURIComponent(token)}`;
+    }
+
+    async function fetchAPI(endpoint) {
+      if (!state.url) return null;
+
+      const headers = { Accept: 'application/json' };
+      const authedEndpoint = appendReadToken(endpoint);
+
+      try {
+        const response = await fetch(`${state.url}${authedEndpoint}`, {
+          headers,
+          cache: 'no-store'
+        });
+
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        console.error('Fetch Error:', error);
+        showError('Connection failed.');
+        return null;
+      }
+    }
+
+    async function fetchAllData(forceFull = false) {
+      if (!state.url || document.hidden) return;
+
+      const now = new Date();
+      const shouldFullFetch = forceFull || !state.data.entries.length || !state.lastFetchAt;
+
+      const entryFrom = new Date(now);
+      if (shouldFullFetch) entryFrom.setDate(entryFrom.getDate() - CONFIG.FULL_LOOKBACK_DAYS);
+      else entryFrom.setMinutes(entryFrom.getMinutes() - CONFIG.DELTA_LOOKBACK_MINUTES);
+
+      const dsFrom = new Date(now);
+      if (shouldFullFetch) dsFrom.setHours(dsFrom.getHours() - CONFIG.DEVICESTATUS_LOOKBACK_HOURS_FULL);
+      else dsFrom.setHours(dsFrom.getHours() - CONFIG.DEVICESTATUS_LOOKBACK_HOURS_DELTA);
+
+      safeSetText('last-update-time', 'Updating...');
+
+      try {
+        if (!state.data.profile || shouldFullFetch) {
+          const profiles = await fetchAPI('/api/v1/profile.json');
+          if (Array.isArray(profiles) && profiles.length > 0) {
+            const defaultName = profiles[0].defaultProfile;
+            state.data.profile = profiles[0].store?.[defaultName] || null;
+          }
+        }
+
+        const [entriesData, treatsData, deviceData] = await Promise.all([
+          fetchAPI(buildEndpoint('/api/v1/entries.json', {
+            'find[dateString][$gte]': entryFrom.toISOString(),
+            count: 10000
+          })),
+          fetchAPI(buildEndpoint('/api/v1/treatments.json', {
+            'find[created_at][$gte]': entryFrom.toISOString(),
+            count: 10000
+          })),
+          fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
+            'find[created_at][$gte]': dsFrom.toISOString(),
+            count: shouldFullFetch ? 1000 : 300
+          }))
+        ]);
+
+        if (Array.isArray(entriesData)) {
+          state.data.entries = mergeByKey(state.data.entries, entriesData, e => e._id || e.date || e.dateString)
+            .sort((a, b) => toTimeMs(a) - toTimeMs(b));
+        }
+        if (Array.isArray(treatsData)) {
+          state.data.treatments = mergeByKey(state.data.treatments, treatsData, t => t._id || `${t.created_at}-${t.eventType || ''}-${t.insulin || ''}-${t.carbs || ''}`)
+            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+        }
+        if (Array.isArray(deviceData)) {
+          state.data.devicestatus = mergeByKey(state.data.devicestatus, deviceData, d => d._id || d.created_at)
+            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+        }
+
+        pruneOldData();
+        state.lastFetchAt = now;
+        hideError();
+        updateUI({ dataFetched: true });
+        safeSetText('sync-time', `Sync: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
+      } catch (error) {
+        console.error(error);
+        showError('Data update failed.');
+      }
+    }
+
+    const getDirectionArrow = (dir) => ({
+      NONE: '⇼', DoubleUp: '⇈', SingleUp: '↑', FortyFiveUp: '↗', Flat: '→', FortyFiveDown: '↘', SingleDown: '↓', DoubleDown: '⇊'
+    }[dir] || '');
+
+    function getBgColorClass(sgv) {
+      if (sgv < 55) return 'text-red-500';
+      if (sgv < 70) return 'text-red-400';
+      if (sgv > 250) return 'text-yellow-500';
+      if (sgv > 180) return 'text-yellow-400';
+      return 'text-green-400';
+    }
+
+    function setDynamicColor(el, className) {
+      if (!el) return;
+      el.classList.remove('text-red-500', 'text-red-400', 'text-yellow-500', 'text-yellow-400', 'text-green-400');
+      el.classList.add(className);
+    }
+
+    function getIobFromDeviceStatus(ds) {
+      if (!ds) return undefined;
+      const candidates = [
+        ds.loop?.iob?.iob,
+        ds.pump?.iob?.iob,
+        typeof ds.pump?.iob === 'number' ? ds.pump.iob : undefined,
+        ds.openaps?.iob?.iob,
+        typeof ds.iob === 'number' ? ds.iob : undefined
+      ];
+      return candidates.find(v => Number.isFinite(Number(v)));
+    }
+
+    function getCobFromDeviceStatus(ds) {
+      if (!ds) return undefined;
+      const candidates = [
+        ds.loop?.cob?.cob,
+        ds.pump?.cob?.cob,
+        typeof ds.pump?.cob === 'number' ? ds.pump.cob : undefined,
+        typeof ds.cob === 'number' ? ds.cob : undefined
+      ];
+      return candidates.find(v => Number.isFinite(Number(v)));
+    }
+
+    // --- STREAMING_CHUNK:Configuring Chart.js properties and annotations... ---
+    // Refined automatic correction (CB) vs manual bolus mapping
+    function isLikelyCB(t) {
+      const insulin = Number(t.insulin || 0);
+      if (!Number.isFinite(insulin) || insulin <= 0) return false;
+
+      // automatic is highly prioritised in Hybrid Closed Loop environments
+      if (t.automatic === true) return true;
+      if (t.automatic === false) return false;
+
+      // Fallbacks mapping when automated tags are missing
+      const type = (t.eventType || '').toLowerCase();
+      const enteredBy = (t.enteredBy || '').toLowerCase();
+      const carbs = Number(t.carbs || 0);
+
+      if (carbs > 0) return false;
+      if (type.includes('meal') || enteredBy.includes('meal')) return false;
+      if (
+        type.includes('smb') ||
+        t.isSMB === true ||
+        enteredBy.includes('smb') ||
+        type.includes('correction') ||
+        type.includes('automatic')
+      ) {
+        return true;
+      }
+
+      return false;
+    }
+
+    function updateUI({ dataFetched = false } = {}) {
+      const entries = state.data.entries;
+      if (!entries.length) return;
+
+      const latest = entries[entries.length - 1];
+      const latestBg = Number(latest.sgv ?? latest.glucose ?? latest.value);
+      const colorClass = getBgColorClass(latestBg);
+
+      const currentBgEl = document.getElementById('current-bg');
+      currentBgEl.textContent = Number.isFinite(latestBg) ? latestBg : '---';
+      setDynamicColor(currentBgEl, colorClass);
+
+      const arrowEl = document.getElementById('trend-arrow');
+      arrowEl.textContent = getDirectionArrow(latest.direction);
+      setDynamicColor(arrowEl, colorClass);
+
+      if (entries.length > 1) {
+        const prev = entries[entries.length - 2];
+        const prevBg = Number(prev.sgv ?? prev.glucose ?? prev.value);
+        const delta = latestBg - prevBg;
+        safeSetText('bg-delta', Number.isFinite(delta) ? `${delta >= 0 ? '+' : ''}${delta} mg/dL` : '--');
+      }
+
+      const latestMs = toTimeMs(latest);
+      const timeDiff = latestMs ? Math.floor((Date.now() - latestMs) / 60000) : null;
+      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : `${timeDiff} min ago`);
+
+      const dsList = state.data.devicestatus;
+      const ds = dsList.length ? dsList[dsList.length - 1] : null;
+      const iobVal = getIobFromDeviceStatus(ds);
+      const cobVal = getCobFromDeviceStatus(ds);
+      safeSetText('current-iob', Number.isFinite(Number(iobVal)) ? Number(iobVal).toFixed(1) : '--');
+      safeSetText('current-cob', Number.isFinite(Number(cobVal)) ? Number(cobVal).toFixed(0) : '--');
+
+      let res = '--';
+      const resVal = ds?.pump?.reservoir ?? ds?.loop?.pump?.reservoir;
+      if (Number.isFinite(Number(resVal))) res = `${Math.round(Number(resVal))}U`;
+      safeSetText('current-res', res);
+
+      const siteChanges = state.data.treatments.filter(t => t.eventType === 'Site Change');
+      if (siteChanges.length) {
+        const lastChange = toTimeMs(siteChanges[siteChanges.length - 1], 'created_at');
+        const hoursSince = (Date.now() - lastChange) / 36e5;
+        safeSetText('current-cage', hoursSince < 24 ? `${hoursSince.toFixed(1)}h` : `${(hoursSince / 24).toFixed(1)}d`);
+      } else {
+        safeSetText('current-cage', '--');
+      }
+
+      calculateSummaries();
+      updateChart({ force: dataFetched });
+
+      const now = Date.now();
+      if (agpMode && (dataFetched || now - state.lastAgpDrawAt > CONFIG.AGP_REFRESH_INTERVAL_MS)) {
+        drawAGPCharts({ force: false });
+      }
+    }
+
+    function calculateSummaries() {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
+      const sevenDaysAgo = new Date(todayStart); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      renderStats('td', calcStatsForPeriod(todayStart, todayEnd), 1);
+      renderStats('7d', calcStatsForPeriod(sevenDaysAgo, todayEnd), 7);
+    }
+
+    function calcStatsForPeriod(startDate, endDate) {
+      const start = startDate.getTime();
+      const end = endDate.getTime();
+
+      const periodEntries = state.data.entries.filter(e => {
+        const t = toTimeMs(e);
+        return t >= start && t < end;
+      });
+
+      const periodTreats = state.data.treatments.filter(t => {
+        const ms = toTimeMs(t, 'created_at');
+        return ms >= start && ms < end;
+      });
+
+      let tbr = 0, tir = 0, tar = 0, mean = 0, cv = 0;
+      let tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
+
+      const values = periodEntries
+        .map(e => Number(e.sgv ?? e.glucose ?? e.value))
+        .filter(Number.isFinite);
+
+      const total = values.length;
+
+      if (total) {
+        tbr54 = values.filter(v => v < 54).length / total * 100;
+        tbr70 = values.filter(v => v >= 54 && v < 70).length / total * 100;
+        tbr = tbr54 + tbr70;
+
+        tir = values.filter(v => v >= 70 && v <= 180).length / total * 100;
+        tar = values.filter(v => v > 180).length / total * 100;
+        tar250 = values.filter(v => v > 250).length / total * 100;
+
+        tirScore = tir - 5 * tbr54 - 2 * tbr70 - 1 * tar250;
+        tirScore = Math.max(0, Math.min(100, tirScore));
+
+        mean = values.reduce((a, b) => a + b, 0) / total;
+        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
+        cv = mean > 0 ? sd / mean * 100 : 0;
+      }
+
+      let totalCarbs = 0, bolus = 0, cb = 0;
+
+      periodTreats.forEach(t => {
+        const carbs = Number(t.carbs || 0);
+        if (Number.isFinite(carbs) && carbs > 0) totalCarbs += carbs;
+
+        const insulin = Number(t.insulin || 0);
+        if (!Number.isFinite(insulin) || insulin <= 0) return;
+
+        const type = (t.eventType || '').toLowerCase();
+        if (type.includes('temp basal') || type.includes('profile')) return;
+
+        const isCB = isLikelyCB(t);
+
+        if (isCB) cb += insulin;
+        else bolus += insulin;
+      });
+
+      const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
+      const tdd = basal + bolus + cb;
+      const activeInsulin = bolus + cb;
+      const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
+      const crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
+      const a1cResult = a1cCalculator.analyze(periodEntries);
+
+      return {
+        tbr,
+        tir,
+        tar,
+        tbr54,
+        tbr70,
+        tar250,
+        tirScore,
+        carbs: totalCarbs,
+        bolus,
+        cb,
+        basal,
+        tdd,
+        mean,
+        cv,
+        crBolus,
+        crTotal,
+        gmi: a1cResult.gmi,
+        adjustedGmi: a1cResult.adjustedGmi
+      };
+    }
+
+    function getProfileBasalRate(date) {
+      const basal = state.data.profile?.basal;
+      if (!Array.isArray(basal) || !basal.length) return 0;
+      const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+      let rate = Number(basal[0].value || 0);
+      for (let i = basal.length - 1; i >= 0; i--) {
+        if (secondsSinceMidnight >= Number(basal[i].timeAsSeconds || 0)) {
+          rate = Number(basal[i].value || 0);
+          break;
+        }
+      }
+      return rate;
+    }
+
+    function getTempBasalAbsolute(t) {
+      if (Number.isFinite(Number(t.absolute))) return Number(t.absolute);
+      if (Number.isFinite(Number(t.rate))) return Number(t.rate);
+      return null;
+    }
+
+    function calculateIntegralBasal(startDate, endDate, periodTreats) {
+      if (!state.data.profile?.basal) return 0;
+      let total = 0;
+      const tempBasals = periodTreats.filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null);
+      let current = new Date(startDate);
+      const end = new Date(Math.min(endDate.getTime(), Date.now()));
+
+      while (current < end) {
+        const timeMs = current.getTime();
+        let rate = getProfileBasalRate(current);
+        for (const tb of tempBasals) {
+          const tbStart = toTimeMs(tb, 'created_at');
+          const tbEnd = tbStart + Number(tb.duration) * 60000;
+          if (timeMs >= tbStart && timeMs < tbEnd) {
+            rate = getTempBasalAbsolute(tb);
+            break;
+          }
+        }
+        total += rate / 60;
+        current.setMinutes(current.getMinutes() + 1);
+      }
+      return total;
+    }
+
+    function renderStats(prefix, stats, days) {
+      safeSetStyle(`${prefix}-tbr`, 'height', `${Math.min(100, Math.max(0, stats.tbr))}%`);
+      safeSetStyle(`${prefix}-tir`, 'height', `${Math.min(100, Math.max(0, stats.tir))}%`);
+      safeSetStyle(`${prefix}-tar`, 'height', `${Math.min(100, Math.max(0, stats.tar))}%`);
+      safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
+      safeSetText(`${prefix}-tir-score`, Math.round(stats.tirScore));
+
+      const tdd = stats.tdd / days;
+      const basal = stats.basal / days;
+      const bolus = stats.bolus / days;
+      const cb = stats.cb / days;
+
+      safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
+      safeSetText(`${prefix}-basal`, basal.toFixed(1));
+      safeSetText(`${prefix}-cb`, cb.toFixed(1));
+      safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
+      safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
+      safeSetText(`${prefix}-mean`, stats.mean > 0 ? Math.round(stats.mean) : 0);
+      safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
+      safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
+      safeSetText(`${prefix}-gmi`, stats.gmi.toFixed(1));
+      safeSetText(`${prefix}-ea1c`, stats.adjustedGmi.toFixed(1));
+
+      if (tdd > 0) {
+        safeSetStyle(`${prefix}-basal-bar`, 'width', `${basal / tdd * 100}%`);
+        safeSetStyle(`${prefix}-cb-bar`, 'width', `${cb / tdd * 100}%`);
+        safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
+      } else {
+        safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-cb-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
+      }
+
+      safeSetText(`${prefix}-cv-agp`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+    }
+
+    function makeTargetAnnotation(alpha = 0.08) {
+      return {
+        type: 'box', yMin: 70, yMax: 180,
+        backgroundColor: `rgba(74, 222, 128, ${alpha})`,
+        borderColor: 'rgba(74, 222, 128, 0.35)',
+        borderWidth: 1,
+        borderDash: [5, 5],
+        drawTime: 'beforeDraw'
+      };
+    }
+
+    // --- STREAMING_CHUNK:Implementing navigation systems and idle dimmers... ---
+    function getMainChartPayload() {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const timelineStart = new Date(todayStart);
+      timelineStart.setDate(timelineStart.getDate() - 7);
+      const timelineEnd = new Date(todayStart);
+      timelineEnd.setDate(timelineEnd.getDate() + 1);
+      timelineEnd.setHours(23, 59, 59, 999);
+
+      const selectedDayStart = new Date(todayStart);
+      selectedDayStart.setDate(selectedDayStart.getDate() - state.offsetDays);
+      const selectedDayEnd = new Date(selectedDayStart);
+      selectedDayEnd.setDate(selectedDayEnd.getDate() + 1);
+
+      let targetStart = new Date(selectedDayStart);
+      let initialDisplayMax;
+
+      if (state.offsetDays === 0) {
+        const nowMs = Date.now();
+        targetStart = new Date(nowMs - state.timeRangeHours * 60 * 60 * 1000);
+        initialDisplayMax = nowMs;
+      } else {
+        initialDisplayMax = Math.min(
+          targetStart.getTime() + state.timeRangeHours * 60 * 60 * 1000,
+          timelineEnd.getTime()
+        );
+      }
+      const panMaxEnd = new Date(timelineEnd);
+
+      const plotEntries = state.data.entries.filter(e => {
+        const d = toTimeMs(e);
+        return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
+      });
+      const plotTreats = state.data.treatments.filter(t => {
+        const d = toTimeMs(t, 'created_at');
+        return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
+      });
+      const plotDeviceStatus = state.data.devicestatus.filter(d => {
+        const dt = toTimeMs(d, 'created_at');
+        return dt >= timelineStart.getTime() && dt <= panMaxEnd.getTime();
+      });
+
+      const scatterData = plotEntries
+        .map(e => ({ x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) }))
+        .filter(d => Number.isFinite(d.y));
+      const yAxisMax = Math.max(250, ...scatterData.map(d => d.y)) + 30;
+      const yAxisMin = 40;
+
+      const annotations = {
+        targetRange: { type: 'box', yMin: 70, yMax: 180, backgroundColor: 'rgba(74, 222, 128, 0.08)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' },
+        selectedDay: { type: 'box', xMin: selectedDayStart.getTime(), xMax: selectedDayEnd.getTime(), backgroundColor: 'rgba(148, 163, 184, 0.07)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' }
+      };
+
+      for (let i = 0; i <= 8; i++) {
+        const day = new Date(timelineStart);
+        day.setDate(day.getDate() + i);
+        annotations[`midnight_${i}`] = {
+          type: 'line', xMin: day.getTime(), xMax: day.getTime(),
+          borderColor: 'rgba(148, 163, 184, 0.35)', borderWidth: 1, borderDash: [4, 4],
+          label: { display: false }
+        };
+      }
+
+      plotTreats.forEach((t, i) => {
+        const time = toTimeMs(t, 'created_at');
+        const carbs = Number(t.carbs || 0);
+        const insulin = Number(t.insulin || 0);
+        if (carbs > 0) {
+          const p = Math.max(3, Math.sqrt(carbs) * 1.5);
+          annotations[`carb_${i}`] = { type: 'label', xValue: time, yValue: yAxisMax - 25, backgroundColor: 'rgba(234,179,8,0.7)', color: '#fff', content: `${carbs}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 } };
+        }
+        if (insulin > 0) {
+          const type = (t.eventType || '').toLowerCase();
+          if (type.includes('temp basal') || type.includes('profile')) return;
+          const isCB = isLikelyCB(t);
+          const color = isCB ? 'rgba(168, 85, 247, 0.9)' : 'rgba(6, 182, 212, 0.85)';
+          const p = Math.max(3, Math.sqrt(insulin) * 3);
+          annotations[`ins_${i}`] = {
+            type: 'label', xValue: time, yValue: yAxisMin + 15, backgroundColor: color, color: '#fff',
+            content: `${insulin}`,
+            font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 }
+          };
+        }
+      });
+
+      const basalData = [];
+      const profileBasalData = [];
+      let maxBasalVal = 1;
+      if (state.data.profile?.basal) {
+        const iter = new Date(timelineStart); iter.setMinutes(0, 0, 0);
+        while (iter <= panMaxEnd) {
+          const tMs = iter.getTime();
+          const profRate = getProfileBasalRate(iter);
+          let actualRate = profRate;
+          const tempBasal = plotTreats.find(t => {
+            if (t.eventType !== 'Temp Basal' || Number(t.duration) <= 0 || getTempBasalAbsolute(t) === null) return false;
+            const ts = toTimeMs(t, 'created_at');
+            const te = ts + Number(t.duration) * 60000;
+            return tMs >= ts && tMs < te;
+          });
+          if (tempBasal) actualRate = getTempBasalAbsolute(tempBasal);
+          profileBasalData.push({ x: tMs, y: profRate });
+          basalData.push({ x: tMs, y: actualRate });
+          maxBasalVal = Math.max(maxBasalVal, profRate, actualRate);
+          iter.setMinutes(iter.getMinutes() + 5);
+        }
+      }
+
+      const iobData = [];
+      let maxIobVal = 1;
+      plotDeviceStatus.forEach(ds => {
+        const iobVal = Number(getIobFromDeviceStatus(ds));
+        if (Number.isFinite(iobVal)) {
+          iobData.push({ x: toTimeMs(ds, 'created_at'), y: iobVal });
+          maxIobVal = Math.max(maxIobVal, iobVal);
+        }
+      });
+
+      const predictionData = [];
+      const dsLatest = state.data.devicestatus.length ? state.data.devicestatus[state.data.devicestatus.length - 1] : null;
+      if (state.offsetDays === 0 && dsLatest) {
+        if (Array.isArray(dsLatest.loop?.predicted?.values) && dsLatest.loop?.predicted?.startDate) {
+          let pTime = new Date(dsLatest.loop.predicted.startDate).getTime();
+          dsLatest.loop.predicted.values.forEach(bg => { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
+        } else if (dsLatest.openaps?.suggested?.predBGs) {
+          const pBGs = dsLatest.openaps.suggested.predBGs.aA || dsLatest.openaps.suggested.predBGs.UAM || dsLatest.openaps.suggested.predBGs.IOB;
+          if (Array.isArray(pBGs)) {
+            let pTime = toTimeMs(dsLatest, 'created_at');
+            pBGs.forEach(bg => { predictionData.push({ x: pTime, y: Number(bg) }); pTime += 5 * 60000; });
+          }
+        }
+      }
+
+      return { targetStart, initialDisplayMax, timelineStart, panMaxEnd, selectedDayStart, selectedDayEnd, scatterData, predictionData, profileBasalData, basalData, iobData, annotations, yAxisMin, yAxisMax, maxBasalVal, maxIobVal, plotTreats };
+    }
+
+    function getOrCreateTooltip(chart) {
+      let tooltipEl = chart.canvas.parentNode.querySelector('div.chart-tooltip');
+      if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.className = 'chart-tooltip';
+        chart.canvas.parentNode.appendChild(tooltipEl);
+      }
+      return tooltipEl;
+    }
+
+    function makeExternalTooltip(plotTreats) {
+      return (context) => {
+        const { chart, tooltip } = context;
+        const tooltipEl = getOrCreateTooltip(chart);
+        if (tooltip.opacity === 0) { tooltipEl.style.opacity = 0; return; }
+        if (tooltip.dataPoints?.length) {
+          const hoverTime = tooltip.dataPoints[0].parsed.x;
+          const d = new Date(hoverTime);
+          const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+          let html = `<div style="font-size:12px;color:#cbd5e1;font-weight:bold;margin-bottom:4px;border-bottom:1px solid rgba(71,85,105,0.5);padding-bottom:4px;">${timeStr}</div>`;
+          const bgValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'BG')?.raw.y;
+          if (bgValue !== undefined) html += `<div style="font-size:16px;font-weight:900;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">BG:</span> ${bgValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
+          const predValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Predicted')?.raw.y;
+          if (predValue !== undefined && bgValue === undefined) html += `<div style="font-size:15px;font-weight:bold;color:#c084fc;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">Pred:</span> ${predValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
+          const basalValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Basal')?.raw.y;
+          if (basalValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ${basalValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U/h</span></div>`;
+          const iobValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'IOB')?.raw.y;
+          if (iobValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ${iobValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U</span></div>`;
+          const treats = plotTreats.filter(t => Math.abs(toTimeMs(t, 'created_at') - hoverTime) < 3 * 60000);
+          if (treats.length) {
+            html += `<div style="margin-top:4px;padding-top:4px;border-top:1px dashed rgba(71,85,105,0.5);">`;
+            treats.forEach(t => {
+              if (Number(t.carbs) > 0) html += `<div style="font-size:14px;color:#facc15;font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">Carbs:</span> ${t.carbs}g</div>`;
+              if (Number(t.insulin) > 0 && !(t.eventType || '').toLowerCase().includes('temp')) {
+                const isCB = isLikelyCB(t);
+                html += `<div style="font-size:14px;color:${isCB ? '#d8b4fe' : '#67e8f9'};font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">${isCB ? 'CB' : 'Bolus'}:</span> ${t.insulin}U</div>`;
+              }
+            });
+            html += `</div>`;
+          }
+          tooltipEl.innerHTML = html;
+        }
+        tooltipEl.style.opacity = 1;
+        const tooltipWidth = tooltipEl.offsetWidth;
+        const tooltipHeight = tooltipEl.offsetHeight;
+        let left = tooltip.caretX - tooltipWidth / 2;
+        let top = tooltip.caretY - tooltipHeight - 15;
+        if (top < 5) top = tooltip.caretY + 15;
+        if (top + tooltipHeight > chart.height - 5) top = chart.height - tooltipHeight - 5;
+        if (left < 5) left = 5;
+        else if (left + tooltipWidth > chart.width - 5) left = chart.width - tooltipWidth - 5;
+        tooltipEl.style.left = `${left}px`;
+        tooltipEl.style.top = `${top}px`;
+      };
+    }
+
+    function updateChart({ force = false } = {}) {
+      if (!state.data.entries.length) return;
+      const ctxEl = document.getElementById('bgChart');
+      if (!ctxEl) return;
+
+      const payload = getMainChartPayload();
+      const signature = [state.offsetDays, state.timeRangeHours, state.data.entries.length, state.data.treatments.length, state.data.devicestatus.length].join('|');
+      if (!force && chartInstance && signature === state.lastMainChartSignature) return;
+      state.lastMainChartSignature = signature;
+
+      Chart.defaults.color = '#64748b';
+      Chart.defaults.font.family = 'Inter, sans-serif';
+
+      const yBasalMax = Math.max(payload.maxBasalVal * 6, 3);
+      const yIobMax = Math.max(payload.maxIobVal * 4, 4);
+
+      if (!chartInstance) {
+        chartInstance = new Chart(ctxEl.getContext('2d'), {
+          type: 'scatter',
+          data: { datasets: [] },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            parsing: false,
+            normalized: true,
+            interaction: { mode: 'nearest', axis: 'x', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: { enabled: false, external: makeExternalTooltip(payload.plotTreats) },
+              annotation: { annotations: payload.annotations },
+              zoom: { pan: { enabled: true, mode: 'x', onPanComplete: () => syncVisibleDayFromChart() }, zoom: { wheel: { enabled: false }, pinch: { enabled: false }, mode: 'x', onZoomComplete: () => syncVisibleDayFromChart() }, limits: { x: { min: payload.timelineStart.getTime(), max: payload.panMaxEnd.getTime() } } }
+            },
+            layout: { padding: { left: 0, right: 0, top: 10, bottom: 0 } },
+            scales: {
+              x: { type: 'time', time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } }, min: payload.targetStart.getTime(), max: payload.initialDisplayMax, grid: { color: 'rgba(51,65,85,0.3)' }, ticks: { font: { size: 11 }, maxRotation: 0, autoSkip: true } },
+              y: { position: 'left', min: payload.yAxisMin, max: payload.yAxisMax, afterBuildTicks: addTargetTicks, ticks: targetTickStyle(), grid: { color: 'rgba(51,65,85,0.3)' } },
+              yBasal: { position: 'right', min: 0, max: yBasalMax, reverse: true, grid: { display: false }, border: { display: false }, ticks: { display: false } },
+              yIob: { position: 'right', min: 0, max: yIobMax, reverse: false, grid: { display: false }, border: { display: false }, ticks: { display: false } }
+            }
+          }
+        });
+      }
+
+      chartInstance.data.datasets = [
+        { label: 'BG', data: payload.scatterData, backgroundColor: ctx => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; }, pointRadius: CONFIG.CHART_POINT_RADIUS, order: 5, yAxisID: 'y' },
+        { type: 'line', label: 'Predicted', data: payload.predictionData, borderColor: 'rgba(192,132,252,0.9)', borderDash: [5, 5], borderWidth: 2.5, fill: false, pointRadius: 0, order: 4, yAxisID: 'y', tension: 0.4 },
+        { type: 'line', label: 'Profile', data: payload.profileBasalData, borderColor: 'rgba(59,130,246,0.4)', borderDash: [3, 3], borderWidth: 1.5, fill: false, stepped: true, pointRadius: 0, order: 3, yAxisID: 'yBasal' },
+        { type: 'line', label: 'Basal', data: payload.basalData, borderColor: 'rgba(59,130,246,0.8)', backgroundColor: 'rgba(59,130,246,0.15)', borderWidth: 1, fill: true, stepped: true, pointRadius: 0, order: 2, yAxisID: 'yBasal' },
+        { type: 'line', label: 'IOB', data: payload.iobData, borderColor: 'rgba(56,189,248,0.8)', backgroundColor: 'rgba(56,189,248,0.2)', borderWidth: 1.5, fill: true, pointRadius: 0, order: 1, yAxisID: 'yIob', tension: 0.4 }
+      ];
+
+      chartInstance.options.plugins.tooltip.external = makeExternalTooltip(payload.plotTreats);
+      chartInstance.options.plugins.annotation.annotations = payload.annotations;
+      chartInstance.options.plugins.zoom.limits.x.min = payload.timelineStart.getTime();
+      chartInstance.options.plugins.zoom.limits.x.max = payload.panMaxEnd.getTime();
+      chartInstance.options.scales.x.min = payload.targetStart.getTime();
+      chartInstance.options.scales.x.max = payload.initialDisplayMax;
+      chartInstance.options.scales.y.max = payload.yAxisMax;
+      chartInstance.options.scales.yBasal.max = yBasalMax;
+      chartInstance.options.scales.yBasal.ticks.callback = v => v <= payload.maxBasalVal ? v : '';
+      chartInstance.options.scales.yIob.max = yIobMax;
+      chartInstance.options.scales.yIob.ticks.callback = v => v <= payload.maxIobVal ? v : '';
+      chartInstance.update('none');
+      syncVisibleDayFromChart();
+    }
+
+    function addTargetTicks(axis) {
+      if (!axis.ticks.find(t => t.value === 70)) axis.ticks.push({ value: 70 });
+      if (!axis.ticks.find(t => t.value === 180)) axis.ticks.push({ value: 180 });
+      axis.ticks.sort((a, b) => a.value - b.value);
+    }
+
+    function targetTickStyle() {
+      return {
+        font: ctx => (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? { size: 12, weight: '900' } : { size: 11 },
+        color: ctx => (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === 180)) ? '#4ade80' : '#64748b'
+      };
+    }
+
+    function buildAgpData() {
+      const now = new Date();
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const targetEntries = state.data.entries.filter(e => toTimeMs(e) >= sevenDaysAgo.getTime());
+      const slots = Array.from({ length: 48 }, () => []);
+      targetEntries.forEach(e => {
+        const d = new Date(toTimeMs(e));
+        const slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
+        const value = Number(e.sgv ?? e.glucose ?? e.value);
+        if (slot >= 0 && slot < 48 && Number.isFinite(value)) slots[slot].push(value);
+      });
+
+      const p = { p10: [], p25: [], p50: [], p75: [], p90: [], times: [] };
+      for (let i = 0; i <= 48; i++) {
+        const idx = i === 48 ? 0 : i;
+        const data = [...slots[idx]].sort((a, b) => a - b);
+        p.times.push(i * 0.5);
+        if (!data.length) {
+          p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null);
+          continue;
+        }
+        const getP = q => {
+          const pos = (data.length - 1) * q;
+          const base = Math.floor(pos);
+          const rest = pos - base;
+          return data[base + 1] !== undefined ? data[base] + rest * (data[base + 1] - data[base]) : data[base];
+        };
+        p.p10.push(getP(0.10)); p.p25.push(getP(0.25)); p.p50.push(getP(0.50)); p.p75.push(getP(0.75)); p.p90.push(getP(0.90));
+      }
+
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayData = state.data.entries
+        .filter(e => toTimeMs(e) >= todayStart.getTime())
+        .map(e => { const d = new Date(toTimeMs(e)); return { x: d.getHours() + d.getMinutes() / 60, y: Number(e.sgv ?? e.glucose ?? e.value) }; })
+        .filter(d => Number.isFinite(d.y));
+
+      return { percentiles: p, todayData };
+    }
+
+    function baseAgpOptions() {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        spanGaps: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { enabled: false },
+          annotation: {
+            annotations: {
+              target: makeTargetAnnotation(0.10)
+            }
+          }
+        },
+        layout: {
+          padding: { left: 10, right: 10, top: 5, bottom: 0 }
+        },
+        scales: {
+          x: {
+            type: 'linear',
+            min: 0,
+            max: 24,
+            ticks: {
+              stepSize: 3,
+              callback: v => `${v}:00`,
+              font: { size: 10, weight: 'bold' }
+            },
+            grid: { color: 'rgba(71,85,105,0.4)' }
+          },
+          y: {
+            min: 40,
+            max: 300,
+            afterBuildTicks: addTargetTicks,
+            ticks: targetTickStyle(),
+            grid: { color: 'rgba(71,85,105,0.4)' }
+          }
+        }
+      };
+    }
+
+    function drawAGPCharts({ force = true } = {}) {
+      if (!state.data.entries.length) return;
+      const now = Date.now();
+      if (!force && agpChartInstance && now - state.lastAgpDrawAt < CONFIG.AGP_REFRESH_INTERVAL_MS) return;
+      state.lastAgpDrawAt = now;
+
+      Chart.defaults.color = '#94a3b8';
+      Chart.defaults.font.family = 'Inter, sans-serif';
+
+      const { percentiles, todayData } = buildAgpData();
+
+      const profEl = document.getElementById('agpProfileChart');
+      const agpEl = document.getElementById('agpChart');
+      if (!profEl || !agpEl) return;
+
+      if (!agpProfileChartInstance) {
+        agpProfileChartInstance = new Chart(profEl.getContext('2d'), { type: 'scatter', data: { datasets: [] }, options: baseAgpOptions() });
+      }
+      agpProfileChartInstance.data.datasets = [{ data: todayData, backgroundColor: ctx => { const y = ctx.raw?.y; return y < 70 ? '#f87171' : y > 180 ? '#facc15' : '#4ade80'; }, pointRadius: 2.5 }];
+      agpProfileChartInstance.update('none');
+
+      if (!agpChartInstance) {
+        agpChartInstance = new Chart(agpEl.getContext('2d'), { type: 'line', data: { labels: [], datasets: [] }, options: baseAgpOptions() });
+      }
+      agpChartInstance.data.labels = percentiles.times;
+      agpChartInstance.data.datasets = [
+        { data: percentiles.p10, fill: false, borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p25, fill: 0, backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p75, fill: 1, backgroundColor: 'rgba(74,222,128,0.5)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p90, fill: 2, backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+        { data: percentiles.p50, fill: false, borderColor: 'rgba(74,222,128,1)', borderWidth: 2.5, pointRadius: 0, tension: 0.3 }
+      ];
+      agpChartInstance.update('none');
+    }
+
+    function toggleSummary() {
+      agpMode = !agpMode;
+      const defEl = document.getElementById('summary-default');
+      const agpEl = document.getElementById('summary-agp');
+      if (agpMode) {
+        defEl.classList.add('invisible');
+        agpEl.classList.remove('hidden');
+        agpEl.classList.add('flex');
+        drawAGPCharts({ force: true });
+      } else {
+        agpEl.classList.add('hidden');
+        agpEl.classList.remove('flex');
+        defEl.classList.remove('invisible');
+      }
+    }
+
+    function formatRelativeDayLabel(offsetDays) {
+      const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+      if (n === 0) return 'Today';
+      if (n === 1) return 'Yesterday';
+      return `${n} days ago`;
+    }
+
+    function getSelectedDayRange() {
+      const base = new Date();
+      const start = new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0);
+      start.setDate(start.getDate() - state.offsetDays);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      return { start, end };
+    }
+
+    function updateSelectedDayStats() {
+      const panel = document.getElementById('selected-day-stats');
+      if (!panel) return;
+
+      if (state.offsetDays === 0) {
+        panel.classList.add('hidden');
+        panel.classList.remove('md:flex');
+        return;
+      }
+
+      const { start, end } = getSelectedDayRange();
+      const stats = calcStatsForPeriod(start, end);
+      const dateLabel = `${start.getMonth() + 1}/${start.getDate()}`;
+      const title = state.offsetDays === 1 ? `YESTERDAY ${dateLabel}` : `${state.offsetDays} DAYS AGO ${dateLabel}`;
+
+      safeSetText('selected-day-title', title);
+      safeSetText('selected-day-tir', `${Math.round(stats.tir)}%`);
+      safeSetText('selected-day-tir-score', Math.round(stats.tirScore));
+      safeSetText('selected-day-avg', stats.mean > 0 ? Math.round(stats.mean) : '--');
+      safeSetText('selected-day-gmi', stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
+      safeSetText('selected-day-adj', stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
+      safeSetText('selected-day-carbs', Math.round(stats.carbs));
+      safeSetText('selected-day-cr-bolus', stats.crBolus > 0 ? stats.crBolus.toFixed(1) : '--');
+      safeSetText('selected-day-cr-total', stats.crTotal > 0 ? stats.crTotal.toFixed(1) : '--');
+      safeSetStyle('selected-day-tbr-bar', 'width', `${Math.min(100, Math.max(0, stats.tbr))}%`);
+      safeSetStyle('selected-day-tir-bar', 'width', `${Math.min(100, Math.max(0, stats.tir))}%`);
+      safeSetStyle('selected-day-tar-bar', 'width', `${Math.min(100, Math.max(0, stats.tar))}%`);
+      panel.classList.remove('hidden');
+      panel.classList.add('md:flex');
+    }
+
+    function dayOffsetFromTimeMs(ms) {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const target = new Date(ms);
+      const targetStart = new Date(target.getFullYear(), target.getMonth(), target.getDate(), 0, 0, 0, 0);
+      return Math.max(0, Math.min(7, Math.round((todayStart.getTime() - targetStart.getTime()) / 86400000)));
+    }
+
+    function syncVisibleDayFromChart() {
+      if (!chartInstance?.scales?.x) return;
+      const x = chartInstance.scales.x;
+      const center = (Number(x.min) + Number(x.max)) / 2;
+      const newOffset = dayOffsetFromTimeMs(center);
+      if (newOffset !== state.offsetDays) {
+        state.offsetDays = newOffset;
+      }
+      updateDateControls({ fromChart: true });
+    }
+
+    function updateDateControls() {
+      const btnNext = document.getElementById('btn-next');
+      const btnPrev = document.getElementById('btn-prev');
+      const label = document.getElementById('chart-date-label');
+      if (label) {
+        label.textContent = formatRelativeDayLabel(state.offsetDays);
+        label.title = formatRelativeDayLabel(state.offsetDays);
+      }
+      if (btnNext) {
+        btnNext.disabled = state.offsetDays === 0;
+        btnNext.classList.toggle('opacity-50', btnNext.disabled);
+        btnNext.classList.toggle('cursor-not-allowed', btnNext.disabled);
+      }
+      if (btnPrev) {
+        btnPrev.disabled = state.offsetDays === 7;
+        btnPrev.classList.toggle('opacity-50', btnPrev.disabled);
+        btnPrev.classList.toggle('cursor-not-allowed', btnPrev.disabled);
+      }
+      document.querySelectorAll('.time-btn').forEach(btn => {
+        const active = Number(btn.dataset.hours) === state.timeRangeHours;
+        btn.classList.toggle('bg-slate-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('shadow', active);
+        btn.classList.toggle('text-slate-200', !active);
+      });
+      updateSelectedDayStats();
+    }
+
+    async function jumpToDay(offsetDays) {
+      state.offsetDays = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+      state.lastHistoryInteractionAt = state.offsetDays > 0 ? Date.now() : 0;
+      updateDateControls();
+
+      if (state.offsetDays > 0) {
+        await fetchDeviceStatusForDay(state.offsetDays);
+      }
+
+      state.lastMainChartSignature = '';
+      updateChart({ force: true });
+    }
+
+    function returnToToday() {
+      state.offsetDays = 0;
+      state.lastHistoryInteractionAt = 0;
+      state.lastMainChartSignature = '';
+
+      updateDateControls();
+      updateChart({ force: true });
+
+      if (state.url) {
+        fetchAllData(false);
+      }
+    }
+
+    function toggleCurrentAdvice() {
+      console.log("Current status active.");
+    }
+
+    function initEvents() {
+      document.getElementById('summary-panel').addEventListener('click', toggleSummary);
+
+      document.getElementById('btn-fullscreen').addEventListener('click', () => {
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(console.log);
+        else document.exitFullscreen?.();
+      });
+
+      document.getElementById('btn-settings').addEventListener('click', () => {
+        document.getElementById('ns-url').value = state.url;
+        document.getElementById('ns-secret').value = state.secret;
+        document.getElementById('settings-modal').classList.remove('hidden');
+      });
+      document.getElementById('btn-cancel-settings').addEventListener('click', () => document.getElementById('settings-modal').classList.add('hidden'));
+      document.getElementById('btn-save-settings').addEventListener('click', () => {
+        state.url = document.getElementById('ns-url').value.trim().replace(/\/$/, '');
+        state.secret = document.getElementById('ns-secret').value.trim();
+        localStorage.setItem('ns-url', state.url);
+        localStorage.setItem('ns-token', state.secret);
+        localStorage.removeItem('ns-secret');
+        document.getElementById('settings-modal').classList.add('hidden');
+        resetDataAndCharts();
+        initApp();
+      });
+
+      document.getElementById('btn-prev').addEventListener('click', async () => {
+        await jumpToDay(state.offsetDays + 1);
+      });
+      document.getElementById('btn-next').addEventListener('click', async () => {
+        await jumpToDay(state.offsetDays - 1);
+      });
+      document.getElementById('btn-today').addEventListener('click', returnToToday);
+      document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          state.timeRangeHours = Number(e.currentTarget.dataset.hours) || 6;
+          state.lastMainChartSignature = '';
+          updateDateControls();
+          updateChart({ force: true });
+        });
+      });
+
+      document.getElementById('current-panel').addEventListener('click', (e) => {
+        if (e.target.closest('button')) return;
+        toggleCurrentAdvice();
+      });
+
+      const resetIdle = () => { idleMinutes = 0; document.body.classList.remove('dimmed'); };
+      ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }));
+
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && state.url && state.offsetDays === 0) fetchAllData(false);
+      });
+    }
+
+    function resetDataAndCharts() {
+      state.data = { entries: [], treatments: [], profile: null, devicestatus: [] };
+      state.lastFetchAt = null;
+      state.lastMainChartSignature = '';
+      if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+      if (agpChartInstance) { agpChartInstance.destroy(); agpChartInstance = null; }
+      if (agpProfileChartInstance) { agpProfileChartInstance.destroy(); agpProfileChartInstance = null; }
+      document.querySelectorAll('.chart-tooltip').forEach(el => el.remove());
+    }
+
+    function initApp() {
+      if (!state.url) {
+        document.getElementById('settings-modal').classList.remove('hidden');
+        return;
+      }
+      fetchAllData(true);
+      if (fetchInterval) clearInterval(fetchInterval);
+      fetchInterval = setInterval(() => {
+        if (state.offsetDays === 0) fetchAllData(false);
+      }, CONFIG.REFRESH_INTERVAL_MS);
+    }
+
+    setInterval(() => {
+      const container = document.getElementById('grid-container');
+      container.classList.remove(`layout-pattern-${currentLayoutPattern}`);
+      currentLayoutPattern = (currentLayoutPattern + 1) % 4;
+      container.classList.add(`layout-pattern-${currentLayoutPattern}`);
+      requestAnimationFrame(() => {
+        chartInstance?.resize();
+        if (agpMode) { agpChartInstance?.resize(); agpProfileChartInstance?.resize(); }
+      });
+    }, 10 * 60 * 1000);
+
+    setInterval(() => {
+      const shiftX = Math.floor(Math.random() * 5) - 2;
+      const shiftY = Math.floor(Math.random() * 5) - 2;
+      document.getElementById('shift-container').style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+    }, 60 * 1000);
+
+    setInterval(() => {
+      idleMinutes++;
+      if (idleMinutes >= 3) document.body.classList.add('dimmed');
+    }, 60 * 1000);
+
+    setInterval(() => {
+      if (state.offsetDays > 0 && state.lastHistoryInteractionAt > 0) {
+        const elapsed = Date.now() - state.lastHistoryInteractionAt;
+
+        if (elapsed > 3 * 60 * 1000) {
+          returnToToday();
+        }
+      }
+    }, 30 * 1000);
+
+    window.addEventListener('beforeunload', () => {
+      if (fetchInterval) clearInterval(fetchInterval);
+      chartInstance?.destroy();
+      agpChartInstance?.destroy();
+      agpProfileChartInstance?.destroy();
+    });
+
+    initEvents();
+    updateDateControls();
+    initApp();
+  </script>
+</body>
+
+</html>
