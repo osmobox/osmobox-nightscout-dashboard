@@ -5,15 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Nightscout Analytical Dashboard</title>
 
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Chart.js & Plugins -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- [最優先防御] スマホでのCDN読み込み失敗や構文エラーを即座に画面に表示する簡易デバッガ -->
+  <script>
+    window.addEventListener('error', function(e) {
+      alert("【JS実行エラー検知】\nメッセージ: " + e.message + "\nファイル: " + e.filename + "\n行番号: " + e.lineno);
+    });
+  </script>
+
+  <!-- 外部ライブラリ (deferを統一し、依存関係の順序を厳格化) -->
+  <script src="https://cdn.tailwindcss.com" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation" defer></script>
+  <script src="https://unpkg.com/lucide@latest" defer></script>
 
   <style>
     :root {
@@ -49,7 +54,6 @@
         grid-template-columns: 78px repeat(4, minmax(58px, 1fr));
       }
     }
-    /* Loading Spinner */
     .loader {
       border: 4px solid rgba(255,255,255,0.1);
       border-left-color: #3b82f6;
@@ -341,8 +345,8 @@
                <div class="text-left"><div class="text-[8px] text-slate-500 font-bold uppercase">GMI/Adj</div><div class="text-sm leading-none font-black text-pink-400"><span id="br-gmi-full">--</span><span class="text-[9px] text-slate-600 mx-[1px]">/</span><span id="br-adj-full">--</span></div></div>
              </div>
              <div class="flex items-center gap-3">
-               <div><div class="text-[8px] text-slate-500 font-bold uppercase">In Range</div><div id="br-inrange-full" class="text-lg leading-none font-black text-slate-400">--%</div></div>
-               <div><div class="text-[8px] text-slate-500 font-bold uppercase">Score</div><div id="br-score-full" class="text-lg leading-none font-black text-emerald-500">--</div></div>
+               <div><div class="text-[8px] text-slate-400 font-bold uppercase">In Range</div><div id="br-inrange-full" class="text-lg leading-none font-black text-slate-400">--%</div></div>
+               <div><div class="text-[8px] text-slate-400 font-bold uppercase">Score</div><div id="br-score-full" class="text-lg leading-none font-black text-emerald-500">--</div></div>
              </div>
            </div>
         </div>
@@ -408,52 +412,47 @@
   </div>
 
   <script>
-    // モバイルのデバッグ用例外検知ラッパー
-    window.addEventListener('error', function(e) {
-      alert("Script Error: " + e.message + "\nLine: " + e.lineno + "\nFile: " + e.filename);
-    });
-
-    lucide.createIcons();
-
-    // --- Clinical A1c Calculator ---
-    class ClinicalA1cCalculator {
-      constructor(config = {}) {}
+    // 全ての処理を DOMContentLoaded 後に安全に実行
+    window.addEventListener('DOMContentLoaded', function() {
       
-      analyze(glucoseData) {
-        const validData = glucoseData.filter(d => {
-          const v = Number(d.sgv ?? d.glucose ?? d.value);
+      // 旧ブラウザ互換パッチ（オプショナルチェイニング `?.` や `??` をオールド構文へ全面リファクタ）
+      // --- Clinical A1c Calculator ---
+      var ClinicalA1cCalculator = function() {};
+      ClinicalA1cCalculator.prototype.analyze = function(glucoseData) {
+        var validData = glucoseData.filter(function(d) {
+          var fallbackVal = d.sgv !== undefined ? d.sgv : (d.glucose !== undefined ? d.glucose : d.value);
+          var v = Number(fallbackVal);
           return Number.isFinite(v) && v > 0 && Number.isFinite(d.date);
         });
 
         if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
 
-        const latestMs = validData[validData.length - 1].date;
-        
-        let sumWeight = 0;
-        let sumWeightedSgv = 0;
-        let sumWeightedEffSgv = 0;
+        var latestMs = validData[validData.length - 1].date;
+        var sumWeight = 0;
+        var sumWeightedSgv = 0;
+        var sumWeightedEffSgv = 0;
 
-        for (let i = 0; i < validData.length; i++) {
-          const d = validData[i];
-          const v = Number(d.sgv ?? d.glucose ?? d.value);
+        for (var i = 0; i < validData.length; i++) {
+          var d = validData[i];
+          var fallbackVal2 = d.sgv !== undefined ? d.sgv : (d.glucose !== undefined ? d.glucose : d.value);
+          var v = Number(fallbackVal2);
           
-          let durationMs = 5 * 60 * 1000;
+          var durationMs = 5 * 60 * 1000;
           if (i > 0) {
-             const prev = validData[i - 1];
+             var prev = validData[i - 1];
              durationMs = d.date - prev.date;
              if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
              if (durationMs < 0) durationMs = 5 * 60 * 1000;
           }
 
-          const ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
-          const rbcWeight = Math.max(0, 1 - (ageDays / 120));
-          
-          const finalWeight = durationMs * rbcWeight;
+          var ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
+          var rbcWeight = Math.max(0, 1 - (ageDays / 120));
+          var finalWeight = durationMs * rbcWeight;
 
           sumWeight += finalWeight;
           sumWeightedSgv += v * finalWeight;
 
-          let vEff = v;
+          var vEff = v;
           if (v < 70) {
             vEff = 70;
           } else if (v >= 70 && v < 100) {
@@ -475,805 +474,809 @@
 
         if (sumWeight === 0) return { adjustedGmi: 0, gmi: 0 };
 
-        const weightedMean = sumWeightedSgv / sumWeight;
-        const effWeightedMean = sumWeightedEffSgv / sumWeight;
+        var weightedMean = sumWeightedSgv / sumWeight;
+        var effWeightedMean = sumWeightedEffSgv / sumWeight;
 
-        const gmi = 3.31 + 0.02392 * weightedMean;
-        const adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
+        var gmi = 3.31 + 0.02392 * weightedMean;
+        var adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
         
         return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
-      }
-    }
-    const a1cCalculator = new ClinicalA1cCalculator();
-
-    // --- State Management 安全な例外ガード付き ---
-    let savedUrl = '';
-    let savedToken = '';
-    let savedTargetMode = 'tir';
-    let savedPeriodWeeks = 4;
-
-    try {
-      savedUrl = localStorage.getItem('ns_url') || '';
-      savedToken = localStorage.getItem('ns_token') || '';
-      savedTargetMode = localStorage.getItem('ns_targetMode') || 'tir';
-      savedPeriodWeeks = parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10);
-    } catch(e) {
-      console.warn("localStorage is not accessible on this browser layout.");
-    }
-
-    const state = {
-      url: savedUrl,
-      token: savedToken,
-      targetMode: savedTargetMode,
-      periodWeeks: savedPeriodWeeks,
-      agpPeriodMode: 'full',
-      selectedDate: null,
-      dataStartDate: null,
-      dataEndDate: null,
-      entries: [],         
-      treatments: [],      
-      profile: null        
-    };
-
-    const chartInstances = {};
-
-    // --- Utility Functions ---
-    const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
-    const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
-
-    function showModal(force = false) {
-      document.getElementById('ns-url').value = state.url;
-      document.getElementById('ns-token').value = state.token;
-      document.getElementById('target-mode').value = state.targetMode;
-      document.getElementById('period-weeks').value = state.periodWeeks.toString();
-      
-      const btnClose = document.getElementById('btn-close-settings');
-      if (force) btnClose.classList.add('hidden');
-      else btnClose.classList.remove('hidden');
-      
-      document.getElementById('settings-modal').classList.remove('hidden');
-    }
-
-    function hideModal() {
-      document.getElementById('settings-modal').classList.add('hidden');
-    }
-
-    function showLoading() {
-      document.getElementById('loading-overlay').classList.remove('hidden');
-      document.getElementById('loading-overlay').classList.add('flex');
-    }
-
-    function hideLoading() {
-      document.getElementById('loading-overlay').classList.add('hidden');
-      document.getElementById('loading-overlay').classList.remove('flex');
-    }
-
-    function formatShortDate(ms) {
-      const d = new Date(ms);
-      return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
-    }
-
-    function toTimeMs(obj, field = 'dateString') {
-      const raw = obj?.[field] ?? obj?.dateString ?? obj?.created_at ?? obj?.date;
-      if (typeof raw === 'number') return raw;
-      const ms = new Date(raw).getTime();
-      return Number.isFinite(ms) ? ms : 0;
-    }
-
-    // --- Insulin & Treatment Logic ---
-    function isLikelyCB(t) {
-      const insulin = Number(t.insulin || 0);
-      if (!Number.isFinite(insulin) || insulin <= 0) return false;
-      
-      if (t.automatic === true) return true;
-      if (t.automatic === false) return false;
-      
-      const type = (t.eventType || '').toLowerCase();
-      const carbs = Number(t.carbs || 0);
-      
-      if (carbs > 0) return false;
-      if (type === 'bolus' || type.includes('meal')) return false;
-      if (type.includes('correction')) return true;
-      
-      return false;
-    }
-
-    function getProfileBasalRate(date) {
-      const basal = state.profile?.basal;
-      if (!Array.isArray(basal) || !basal.length) return 0;
-      const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
-      let rate = Number(basal[0].value || 0);
-      for (let i = basal.length - 1; i >= 0; i--) {
-        if (secondsSinceMidnight >= Number(basal[i].timeAsSeconds || 0)) { rate = Number(basal[i].value || 0); break; }
-      }
-      return rate;
-    }
-
-    function getTempBasalAbsolute(t) {
-      if (Number.isFinite(Number(t.absolute))) return Number(t.absolute);
-      if (Number.isFinite(Number(t.rate))) return Number(t.rate);
-      return null;
-    }
-
-    function calculateIntegralBasal(startDate, endDate, periodTreats) {
-      if (!state.profile?.basal) return 0;
-      
-      const startMs = startDate.getTime();
-      const endMs = Math.min(endDate.getTime(), Date.now());
-      if (startMs >= endMs) return 0;
-
-      const tempBasals = periodTreats
-        .filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null)
-        .map(t => {
-           const start = toTimeMs(t, 'created_at');
-           return { start, end: start + Number(t.duration) * 60000, rate: getTempBasalAbsolute(t) };
-        })
-        .filter(tb => tb.end > startMs && tb.start < endMs)
-        .sort((a, b) => a.start - b.start);
-
-      let total = 0;
-      let currentMs = startMs;
-      let tbIndex = 0;
-
-      while (currentMs < endMs) {
-        while (tbIndex < tempBasals.length && tempBasals[tbIndex].end <= currentMs) {
-          tbIndex++;
-        }
-
-        let rate;
-        if (tbIndex < tempBasals.length && tempBasals[tbIndex].start <= currentMs) {
-          rate = tempBasals[tbIndex].rate;
-        } else {
-          rate = getProfileBasalRate(new Date(currentMs));
-        }
-
-        total += rate / 60;
-        currentMs += 60000;
-      }
-      return total;
-    }
-
-    // --- Statistical Calculations ---
-    function calcStatsForPeriod(startDate, endDate) {
-      const startMs = startDate.getTime();
-      const endMs = endDate.getTime();
-      
-      const periodEntries = state.entries.filter(e => e.date >= startMs && e.date < endMs);
-      const periodTreats = state.treatments.filter(t => { const d = toTimeMs(t, 'created_at'); return d >= startMs && d < endMs; });
-      
-      const targetMax = state.targetMode === 'titr' ? 140 : 180;
-      let tbr = 0, tir = 0, tar = 0, mean = 0, cv = 0, tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
-      
-      const values = periodEntries.map(e => e.sgv);
-      const total = values.length;
-      
-      if (total > 0) {
-        tbr54 = values.filter(v => v < 54).length / total * 100;
-        tbr70 = values.filter(v => v >= 54 && v < 70).length / total * 100;
-        tbr = tbr54 + tbr70;
-        tir = values.filter(v => v >= 70 && v <= targetMax).length / total * 100;
-        tar = values.filter(v => v > targetMax).length / total * 100;
-        tar250 = values.filter(v => v > 250).length / total * 100;
-        
-        tirScore = tir - (5 * tbr54) - (2 * tbr70) - (1 * tar250);
-        if (state.targetMode === 'titr') {
-           const pH = values.filter(v => v > 140 && v <= 250).length / total * 100;
-           tirScore -= (0.5 * pH);
-        }
-        tirScore = Math.max(0, Math.min(100, tirScore));
-        
-        mean = values.reduce((a, b) => a + b, 0) / total;
-        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
-        cv = mean > 0 ? (sd / mean) * 100 : 0;
-      }
-      
-      let totalCarbs = 0, bolus = 0, cb = 0;
-      periodTreats.forEach(t => {
-        const carbs = Number(t.carbs || 0);
-        if (Number.isFinite(carbs) && carbs > 0) totalCarbs += carbs;
-        const insulin = Number(t.insulin || 0);
-        if (!Number.isFinite(insulin) || insulin <= 0) return;
-        const type = (t.eventType || '').toLowerCase();
-        if (type.includes('temp basal') || type.includes('profile')) return;
-        if (isLikelyCB(t)) cb += insulin;
-        else bolus += insulin;
-      });
-      
-      const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
-      const tdd = basal + bolus + cb;
-      const activeInsulin = bolus + cb;
-      const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
-      const crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
-      const a1cResult = a1cCalculator.analyze(periodEntries);
-      
-      return { 
-        tbr, tir, tar, tirScore, 
-        carbs: totalCarbs, bolus, cb, basal, tdd, 
-        mean, cv, crBolus, crTotal, 
-        gmi: a1cResult.gmi, adjustedGmi: a1cResult.adjustedGmi 
       };
-    }
 
-    function renderStats(prefix, stats, days) {
-      safeSetStyle(`${prefix}-tbr`, 'height', `${Math.min(100, Math.max(0, stats.tbr))}%`);
-      safeSetStyle(`${prefix}-tir`, 'height', `${Math.min(100, Math.max(0, stats.tir))}%`);
-      safeSetStyle(`${prefix}-tar`, 'height', `${Math.min(100, Math.max(0, stats.tar))}%`);
-      
-      safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
-      safeSetText(`${prefix}-tir-score`, Math.round(stats.tirScore).toString());
-      
-      const tdd = stats.tdd / days;
-      const basal = stats.basal / days;
-      const bolus = stats.bolus / days;
-      const cb = stats.cb / days;
-      
-      safeSetText(`${prefix}-tdd`, tdd.toFixed(1));
-      safeSetText(`${prefix}-basal`, basal.toFixed(1));
-      safeSetText(`${prefix}-cb`, cb.toFixed(1));
-      safeSetText(`${prefix}-bolus`, bolus.toFixed(1));
-      safeSetText(`${prefix}-carbs`, Math.round(stats.carbs / days));
-      
-      safeSetText(`${prefix}-mean`, stats.mean > 0 ? Math.round(stats.mean) : 0);
-      safeSetText(`${prefix}-cv`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
-      
-      safeSetText(`${prefix}-cr-bolus`, stats.crBolus.toFixed(1));
-      safeSetText(`${prefix}-cr-total`, stats.crTotal.toFixed(1));
-      safeSetText(`${prefix}-gmi`, stats.gmi.toFixed(1));
-      safeSetText(`${prefix}-ea1c`, stats.adjustedGmi.toFixed(1));
-      
-      if (tdd > 0) {
-        safeSetStyle(`${prefix}-basal-bar`, 'width', `${basal / tdd * 100}%`);
-        safeSetStyle(`${prefix}-cb-bar`, 'width', `${cb / tdd * 100}%`);
-        safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
-      } else {
-        safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
-        safeSetStyle(`${prefix}-cb-bar`, 'width', '0%');
-        safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
-      }
-    }
+      var a1cCalculator = new ClinicalA1cCalculator();
 
-    function calculateSummaries() {
-      const targetLabel = state.targetMode === 'titr' ? 'TITR' : 'TIR';
-      safeSetText('label-tir', targetLabel);
-      safeSetText('label-tir-score', `${targetLabel} SCORE`);
+      // --- State Management ---
+      var savedUrl = '';
+      var savedToken = '';
+      var savedTargetMode = 'tir';
+      var savedPeriodWeeks = 4;
 
-      const baseEnd = new Date(state.dataEndDate);
-      const todayStart = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0);
-      
-      const yesterdayStart = new Date(todayStart.getTime() - 86400000);
-      const yesterdayEnd = new Date(todayStart.getTime() - 1);
-      
-      const sevenDaysStart = new Date(todayStart.getTime() - (6 * 86400000));
-      
-      const periodDays = state.periodWeeks * 7;
-      const periodStart = new Date(todayStart.getTime() - ((periodDays - 1) * 86400000));
-
-      safeSetText('summary-period-label', `${state.periodWeeks}W`);
-      safeSetText('summary-period-title', `${periodDays} Days`);
-
-      renderStats('td', calcStatsForPeriod(todayStart, baseEnd), 1);
-      renderStats('yd', calcStatsForPeriod(yesterdayStart, yesterdayEnd), 1);
-      renderStats('7d', calcStatsForPeriod(sevenDaysStart, baseEnd), 7);
-      renderStats('pw', calcStatsForPeriod(periodStart, baseEnd), periodDays);
-    }
-
-    // --- Data Fetching (スマホ・Safari用例外検証ロジック補強) ---
-    async function fetchData() {
-      const urlBase = state.url.trim().replace(/\/$/, '');
-      if(!urlBase) {
-        alert("Nightscout URL is empty.");
-        return;
-      }
-      
-      // Mixed Contentの警告判定
-      if (window.location.protocol === 'https:' && urlBase.startsWith('http:')) {
-         alert("【セキュリティエラーの可能性】\nこの画面はHTTPS接続ですが、Nightscoutの入力がHTTP（暗号化なし）になっています。スマホブラウザによって通信が自動ブロックされるため、Nightscout側を https:// に変更してください。");
-      }
-      
-      showLoading();
-      
-      const now = new Date();
-      const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-      
-      const MAX_PERIOD_WEEKS = 12;
-      const totalDaysToFetch = MAX_PERIOD_WEEKS * 7 * 2;
-      const startDate = new Date(endDate.getTime() - totalDaysToFetch * 86400000 + 1);
-      
-      const buildQs = (path, dateField) => {
-         let base = `${urlBase}${path}?find[${dateField}][$gte]=${startDate.toISOString()}&find[${dateField}][$lte]=${endDate.toISOString()}&count=100000`;
-         if (state.token) base += `&token=${encodeURIComponent(state.token)}`;
-         return base;
-      };
-      
       try {
-        let profilePath = `${urlBase}/api/v1/profile.json`;
-        if (state.token) profilePath += `?token=${encodeURIComponent(state.token)}`;
-        
-        // スマホでのFetchタイムアウト・エラーハンドリングの視認化
-        const fetchWithCheck = async (url) => {
-           const res = await fetch(url, { headers: { Accept: 'application/json' }}).catch(e => {
-              throw new Error("Network request failed. Browser blocked the connection or Server is down. (" + e.message + ")");
-           });
-           if (!res.ok) throw new Error("Server responded with status: " + res.status);
-           return res.json();
-        };
-
-        const [rawEntries, rawTreats, profiles] = await Promise.all([
-           fetchWithCheck(buildQs('/api/v1/entries.json', 'dateString')),
-           fetchWithCheck(buildQs('/api/v1/treatments.json', 'created_at')),
-           fetchWithCheck(profilePath)
-        ]);
-        
-        state.entries = rawEntries.map(d => ({
-           date: new Date(d.dateString || d.date).getTime(),
-           sgv: Number(d.sgv ?? d.glucose ?? d.value)
-        })).filter(d => Number.isFinite(d.sgv) && d.sgv > 0).sort((a,b) => a.date - b.date);
-        
-        state.treatments = Array.isArray(rawTreats) ? rawTreats : [];
-        
-        if (Array.isArray(profiles) && profiles.length > 0) {
-           const defaultName = profiles[0].defaultProfile;
-           state.profile = profiles[0].store?.[defaultName] || null;
-        }
-
-        state.dataEndDate = endDate.getTime();
-        state.dataStartDate = startDate.getTime();
-        
-        state.selectedDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0, 0).getTime();
-        
-        hideLoading();
-        updateAllDashboards();
-        
-      } catch (err) {
-        console.error(err);
-        hideLoading();
-        alert("【Fetch Failed / 取得失敗】\n" + err.message + "\n\nURLとトークンが正しいか、NightscoutがCORSリクエストを許可しているか確認してください。");
-        showModal(true);
-      }
-    }
-
-    // --- Chart Rendering ---
-    Chart.defaults.color = '#94a3b8';
-    Chart.defaults.font.family = 'Inter, sans-serif';
-
-    function getTargetAnnotation() {
-      const yMax = state.targetMode === 'titr' ? 140 : 180;
-      return {
-        type: 'box',
-        yMin: 70, yMax: yMax,
-        backgroundColor: 'rgba(74, 222, 128, 0.08)',
-        borderWidth: 0,
-        drawTime: 'beforeDatasetsDraw'
-      };
-    }
-
-    function getDotColor(ctx) {
-      const y = ctx.raw?.y;
-      const yMax = state.targetMode === 'titr' ? 140 : 180;
-      if (y < 70) return '#f87171';
-      if (y > yMax) return '#facc15';
-      return '#4ade80';
-    }
-
-    function addTargetTicks(axis) {
-       const yMax = state.targetMode === 'titr' ? 140 : 180;
-       if (!axis.ticks.find(t => t.value === 70)) axis.ticks.push({ value: 70 });
-       if (!axis.ticks.find(t => t.value === yMax)) axis.ticks.push({ value: yMax });
-       axis.ticks.sort((a, b) => a.value - b.value);
-    }
-    function getTickFont(ctx) {
-       const yMax = state.targetMode === 'titr' ? 140 : 180;
-       return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? { size: 10, weight: '900' } : { size: 9, weight: 'bold' };
-    }
-    function getTickColor(ctx) {
-       const yMax = state.targetMode === 'titr' ? 140 : 180;
-       return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? '#4ade80' : 'rgba(148, 163, 184, 0.7)';
-    }
-
-    function renderCGMChart(canvasId, entries, timeStart, timeEnd) {
-      const canvasEl = document.getElementById(canvasId);
-      if(!canvasEl) return;
-      const ctx = canvasEl.getContext('2d');
-      const dataPoints = entries.map(e => ({ x: e.date, y: e.sgv }));
-      const maxDataY = dataPoints.length ? Math.max(...dataPoints.map(d=>d.y)) : 180;
-      
-      if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
-      
-      chartInstances[canvasId] = new Chart(ctx, {
-        type: 'scatter',
-        data: {
-          datasets: [{
-             data: dataPoints,
-             backgroundColor: getDotColor,
-             pointRadius: 2.5,
-             borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false, animation: false,
-          plugins: {
-            legend: { display: false }, tooltip: { enabled: false },
-            annotation: { annotations: { target: getTargetAnnotation() } }
-          },
-          layout: { padding: { left: 5, right: 10, top: 10, bottom: 0 } },
-          scales: {
-            x: {
-              type: 'time', min: timeStart, max: timeEnd,
-              time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
-              grid: { color: 'rgba(51,65,85,0.4)' },
-              ticks: { font: { size: 10, weight: 'bold' } }
-            },
-            y: {
-              min: 40, max: Math.max(250, maxDataY + 20),
-              grid: { color: 'rgba(51,65,85,0.4)' },
-              afterBuildTicks: addTargetTicks,
-              ticks: { font: getTickFont, color: getTickColor }
-            }
-          }
-        }
-      });
-    }
-
-    function buildAgpData(entries) {
-      const slots = Array.from({ length: 48 }, () => []);
-      entries.forEach(e => {
-        const d = new Date(e.date);
-        const slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
-        if (slot >= 0 && slot < 48) slots[slot].push(e.sgv);
-      });
-      
-      const p = { p10: [], p25: [], p50: [], p75: [], p90: [], times: [] };
-      for (let i = 0; i <= 48; i++) {
-        const idx = i === 48 ? 0 : i;
-        const data = [...slots[idx]].sort((a, b) => a - b);
-        p.times.push(i * 0.5);
-        
-        if (!data.length) { 
-          p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null); 
-          continue; 
-        }
-        
-        const getPercentile = q => { 
-          const pos = (data.length - 1) * q; 
-          const base = Math.floor(pos); 
-          const rest = pos - base; 
-          return data[base + 1] !== undefined ? data[base] + rest * (data[base + 1] - data[base]) : data[base]; 
-        };
-        
-        p.p10.push(getPercentile(0.10)); p.p25.push(getPercentile(0.25)); p.p50.push(getPercentile(0.50)); p.p75.push(getPercentile(0.75)); p.p90.push(getPercentile(0.90));
-      }
-      return p;
-    }
-
-    function renderAGPChart(canvasId, entries) {
-      const canvasEl = document.getElementById(canvasId);
-      if(!canvasEl) return;
-      const ctx = canvasEl.getContext('2d');
-      const agpData = buildAgpData(entries);
-      
-      if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
-      
-      chartInstances[canvasId] = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: agpData.times,
-          datasets: [
-            { data: agpData.p10, fill: false, borderWidth: 0, pointRadius: 0, tension: 0.3 },
-            { data: agpData.p25, fill: '-1', backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
-            { data: agpData.p75, fill: '-1', backgroundColor: 'rgba(74,222,128,0.5)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
-            { data: agpData.p90, fill: '-1', backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
-            { data: agpData.p50, fill: false, borderColor: 'rgba(74,222,128,1)', borderWidth: 2.5, pointRadius: 0, tension: 0.3 }
-          ]
-        },
-        options: {
-          responsive: true, maintainAspectRatio: false, animation: false, spanGaps: true,
-          plugins: {
-            legend: { display: false }, tooltip: { enabled: false },
-            annotation: { annotations: { target: getTargetAnnotation() } }
-          },
-          layout: { padding: { left: 5, right: 10, top: 10, bottom: 0 } },
-          scales: {
-            x: {
-              type: 'linear', min: 0, max: 24,
-              ticks: { stepSize: 3, callback: v => `${v}:00`, font: { size: 10, weight: 'bold' } },
-              grid: { color: 'rgba(51,65,85,0.4)' }
-            },
-            y: {
-              min: 40, max: 300,
-              grid: { color: 'rgba(51,65,85,0.4)' },
-              afterBuildTicks: addTargetTicks,
-              ticks: { font: getTickFont, color: getTickColor }
-            }
-          }
-        }
-      });
-    }
-
-    // --- Dashboard Updaters ---
-    function updateTL() {
-      const start = state.selectedDate;
-      const end = start + 86400000 - 1;
-      
-      const stats = calcStatsForPeriod(new Date(start), new Date(end));
-      document.getElementById('tl-date').textContent = formatShortDate(start);
-      document.getElementById('tl-score').textContent = Math.round(stats.tirScore).toString();
-      
-      const dayEntries = state.entries.filter(e => e.date >= start && e.date <= end);
-      renderCGMChart('tl-chart', dayEntries, start, end);
-    }
-
-    function findBestDay() {
-      const searchEnd = new Date(state.dataEndDate);
-      const searchStart = new Date(searchEnd.getTime() - (state.periodWeeks * 7 * 86400000) + 1);
-      searchStart.setHours(0,0,0,0);
-      
-      let bestScore = -1;
-      let bestDate = null;
-      let bestEntries = [];
-      
-      const todayMs = new Date(searchEnd.getFullYear(), searchEnd.getMonth(), searchEnd.getDate(), 0, 0, 0, 0).getTime();
-      
-      for(let ms = searchStart.getTime(); ms <= searchEnd.getTime(); ms += 86400000) {
-         if (ms === todayMs) continue;
-
-         const dayEnd = ms + 86400000 - 1;
-         const stats = calcStatsForPeriod(new Date(ms), new Date(dayEnd));
-         const dayEntries = state.entries.filter(e => e.date >= ms && e.date <= dayEnd);
-         
-         if(dayEntries.length < 144) continue;
-         
-         if(stats.tirScore > bestScore) {
-            bestScore = stats.tirScore;
-            bestDate = ms;
-            bestEntries = dayEntries;
-         }
-      }
-      return { date: bestDate, entries: bestEntries, score: bestScore };
-    }
-
-    function updateTR() {
-      const best = findBestDay();
-      document.getElementById('tr-period-badge').textContent = `${state.periodWeeks}W`;
-      
-      if(!best.date) {
-         document.getElementById('tr-date').textContent = '--/--';
-         document.getElementById('tr-score').textContent = '--';
-         if(chartInstances['tr-chart']) chartInstances['tr-chart'].destroy();
-         return;
-      }
-      
-      document.getElementById('tr-date').textContent = formatShortDate(best.date);
-      document.getElementById('tr-score').textContent = Math.round(best.score).toString();
-      renderCGMChart('tr-chart', best.entries, best.date, best.date + 86400000 - 1);
-    }
-
-    function getAgpPeriodInfo(isCurrent, is1w) {
-      const baseEndObj = new Date(state.dataEndDate);
-      const latestDayEndMs = new Date(baseEndObj.getFullYear(), baseEndObj.getMonth(), baseEndObj.getDate(), 23, 59, 59, 999).getTime();
-
-      const daysCount = is1w ? 7 : (state.periodWeeks * 7);
-      const durationMs = daysCount * 86400000;
-      
-      if (isCurrent) {
-         const end = latestDayEndMs;
-         const start = end - durationMs + 1;
-         return { start, end };
-      } else {
-         const currentStart = latestDayEndMs - durationMs + 1;
-         const end = currentStart - 1;
-         const start = end - durationMs + 1;
-         return { start, end };
-      }
-    }
-
-    function drawAgpPanelData(isCurrent, is1w) {
-       const span = getAgpPeriodInfo(isCurrent, is1w);
-       const stats = calcStatsForPeriod(new Date(span.start), new Date(span.end));
-       const entries = state.entries.filter(e => e.date >= span.start && e.date <= span.end);
-       
-       const prefix = isCurrent ? 'bl' : 'br';
-       const suffix = is1w ? '1w' : 'full';
-       
-       safeSetText(`${prefix}-date-range-${suffix}`, `${formatShortDate(span.start)} - ${formatShortDate(span.end)}`);
-       
-       safeSetText(`${prefix}-avg-${suffix}`, stats.mean > 0 ? Math.round(stats.mean) : '--');
-       safeSetText(`${prefix}-cv-${suffix}`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
-       safeSetText(`${prefix}-gmi-${suffix}`, stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
-       safeSetText(`${prefix}-adj-${suffix}`, stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
-       
-       safeSetText(`${prefix}-inrange-${suffix}`, `${stats.tir.toFixed(1)}%`);
-       safeSetText(`${prefix}-score-${suffix}`, Math.round(stats.tirScore).toString());
-       
-       renderAGPChart(`${prefix}-chart-${suffix}`, entries);
-    }
-
-    function updateAGPPanels() {
-      drawAgpPanelData(true, true);
-      drawAgpPanelData(true, false);
-      drawAgpPanelData(false, true);
-      drawAgpPanelData(false, false);
-      toggleAgpVisibility();
-    }
-
-    function toggleAgpVisibility() {
-      const is1w = state.agpPeriodMode === '1w';
-      
-      const toggleElements = (prefix) => {
-         const head1w = document.getElementById(`${prefix}-header-1w`);
-         const headFull = document.getElementById(`${prefix}-header-full`);
-         const cont1w = document.getElementById(`${prefix}-container-1w`);
-         const contFull = document.getElementById(`${prefix}-container-full`);
-         
-         if(is1w) {
-            if(head1w) { head1w.classList.remove('hidden'); head1w.classList.add('flex'); }
-            if(cont1w) cont1w.classList.remove('hidden');
-            if(headFull) { headFull.classList.add('hidden'); headFull.classList.remove('flex'); }
-            if(contFull) contFull.classList.add('hidden');
-         } else {
-            if(headFull) { headFull.classList.remove('hidden'); headFull.classList.add('flex'); }
-            if(contFull) contFull.classList.remove('hidden');
-            if(head1w) { head1w.classList.add('hidden'); head1w.classList.remove('flex'); }
-            if(cont1w) cont1w.classList.add('hidden');
-         }
-      };
-      
-      toggleElements('bl');
-      toggleElements('br');
-    }
-
-    function updateNavControls() {
-      const baseEnd = new Date(state.dataEndDate);
-      const latestDayMs = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0).getTime();
-      
-      document.getElementById('btn-next-day').disabled = state.selectedDate >= latestDayMs;
-      document.getElementById('btn-next-day').style.opacity = document.getElementById('btn-next-day').disabled ? '0.3' : '1';
-      
-      const maxDaysNeeded = (state.periodWeeks * 7 * 2); 
-      const minAllowedDate = latestDayMs - (maxDaysNeeded * 86400000) + 1;
-      document.getElementById('btn-prev-day').disabled = (state.selectedDate - 86400000) < minAllowedDate;
-      document.getElementById('btn-prev-day').style.opacity = document.getElementById('btn-prev-day').disabled ? '0.3' : '1';
-    }
-
-    function updateAllDashboards() {
-      if(!state.entries.length) return;
-      
-      calculateSummaries();
-      updateTL();
-      updateTR();
-      updateAGPPanels();
-      updateNavControls();
-    }
-
-    // --- Initialization & Events ---
-    function updateTargetToggleUI() {
-      const label = document.getElementById('header-target-label');
-      if (label) label.textContent = state.targetMode.toUpperCase();
-      const select = document.getElementById('target-mode');
-      if (select) select.value = state.targetMode;
-    }
-
-    function updatePeriodToggleUI() {
-      const select = document.getElementById('period-weeks');
-      if (select) select.value = state.periodWeeks.toString();
-      
-      document.querySelectorAll('.period-btn').forEach(btn => {
-        const w = parseInt(btn.dataset.weeks, 10);
-        if (w === state.periodWeeks) {
-          btn.classList.add('bg-slate-600', 'text-white', 'shadow');
-          btn.classList.remove('text-slate-300', 'hover:text-white');
-        } else {
-          btn.classList.remove('bg-slate-600', 'text-white', 'shadow');
-          btn.classList.add('text-slate-300', 'hover:text-white');
-        }
-      });
-    }
-
-    document.getElementById('btn-open-settings').addEventListener('click', () => showModal(false));
-    document.getElementById('btn-close-settings').addEventListener('click', hideModal);
-    
-    document.getElementById('btn-save-settings').addEventListener('click', () => {
-      const newUrl = document.getElementById('ns-url').value;
-      const newToken = document.getElementById('ns-token').value;
-      const newTargetMode = document.getElementById('target-mode').value;
-      const newPeriodWeeks = parseInt(document.getElementById('period-weeks').value, 10);
-
-      const requiresFetch = (state.url !== newUrl) || (state.token !== newToken);
-
-      state.url = newUrl;
-      state.token = newToken;
-      state.targetMode = newTargetMode;
-      state.periodWeeks = newPeriodWeeks;
-      
-      try {
-        localStorage.setItem('ns_url', state.url);
-        localStorage.setItem('ns_token', state.token);
-        localStorage.setItem('ns_targetMode', state.targetMode);
-        localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+        savedUrl = localStorage.getItem('ns_url') || '';
+        savedToken = localStorage.getItem('ns_token') || '';
+        savedTargetMode = localStorage.getItem('ns_targetMode') || 'tir';
+        savedPeriodWeeks = parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10);
       } catch(e) {
-        console.warn("Could not save settings to localStorage.");
+        console.warn("localStorage accessibility issue.");
       }
+
+      var state = {
+        url: savedUrl,
+        token: savedToken,
+        targetMode: savedTargetMode,
+        periodWeeks: savedPeriodWeeks,
+        agpPeriodMode: 'full',
+        selectedDate: null,
+        dataStartDate: null,
+        dataEndDate: null,
+        entries: [],         
+        treatments: [],      
+        profile: null        
+      };
+
+      var chartInstances = {};
+
+      // --- Core Functions ---
+      var safeSetText = function(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; };
+      var safeSetStyle = function(id, prop, val) { var el = document.getElementById(id); if (el) el.style[prop] = val; };
+
+      function showModal(force) {
+        document.getElementById('ns-url').value = state.url;
+        document.getElementById('ns-token').value = state.token;
+        document.getElementById('target-mode').value = state.targetMode;
+        document.getElementById('period-weeks').value = state.periodWeeks.toString();
+        
+        var btnClose = document.getElementById('btn-close-settings');
+        if (force) btnClose.classList.add('hidden');
+        else btnClose.classList.remove('hidden');
+        
+        document.getElementById('settings-modal').classList.remove('hidden');
+      }
+
+      function hideModal() {
+        document.getElementById('settings-modal').classList.add('hidden');
+      }
+
+      function showLoading() {
+        document.getElementById('loading-overlay').classList.remove('hidden');
+        document.getElementById('loading-overlay').classList.add('flex');
+      }
+
+      function hideLoading() {
+        document.getElementById('loading-overlay').classList.add('hidden');
+        document.getElementById('loading-overlay').classList.remove('flex');
+      }
+
+      function formatShortDate(ms) {
+        var d = new Date(ms);
+        return (String(d.getMonth() + 1).padStart(2, '0')) + '/' + (String(d.getDate()).padStart(2, '0'));
+      }
+
+      function toTimeMs(obj, field) {
+        if (!field) field = 'dateString';
+        if (!obj) return 0;
+        var raw = obj[field] !== undefined ? obj[field] : (obj.dateString !== undefined ? obj.dateString : (obj.created_at !== undefined ? obj.created_at : obj.date));
+        if (typeof raw === 'number') return raw;
+        var ms = new Date(raw).getTime();
+        return Number.isFinite(ms) ? ms : 0;
+      }
+
+      function isLikelyCB(t) {
+        var insulin = Number(t.insulin || 0);
+        if (!Number.isFinite(insulin) || insulin <= 0) return false;
+        
+        if (t.automatic === true) return true;
+        if (t.automatic === false) return false;
+        
+        var type = (t.eventType || '').toLowerCase();
+        var carbs = Number(t.carbs || 0);
+        
+        if (carbs > 0) return false;
+        if (type === 'bolus' || type.includes('meal')) return false;
+        if (type.includes('correction')) return true;
+        
+        return false;
+      }
+
+      function getProfileBasalRate(date) {
+        if (!state.profile || !Array.isArray(state.profile.basal) || !state.profile.basal.length) return 0;
+        var basal = state.profile.basal;
+        var secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+        var rate = Number(basal[0].value || 0);
+        for (var i = basal.length - 1; i >= 0; i--) {
+          if (secondsSinceMidnight >= Number(basal[i].timeAsSeconds || 0)) { rate = Number(basal[i].value || 0); break; }
+        }
+        return rate;
+      }
+
+      function getTempBasalAbsolute(t) {
+        if (Number.isFinite(Number(t.absolute))) return Number(t.absolute);
+        if (Number.isFinite(Number(t.rate))) return Number(t.rate);
+        return null;
+      }
+
+      function calculateIntegralBasal(startDate, endDate, periodTreats) {
+        if (!state.profile || !state.profile.basal) return 0;
+        
+        var startMs = startDate.getTime();
+        var endMs = Math.min(endDate.getTime(), Date.now());
+        if (startMs >= endMs) return 0;
+
+        var tempBasals = periodTreats
+          .filter(function(t) { return t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null; })
+          .map(function(t) {
+             var start = toTimeMs(t, 'created_at');
+             return { start: start, end: start + Number(t.duration) * 60000, rate: getTempBasalAbsolute(t) };
+          })
+          .filter(function(tb) { return tb.end > startMs && tb.start < endMs; })
+          .sort(function(a, b) { return a.start - b.start; });
+
+        var total = 0;
+        var currentMs = startMs;
+        var tbIndex = 0;
+
+        while (currentMs < endMs) {
+          while (tbIndex < tempBasals.length && tempBasals[tbIndex].end <= currentMs) {
+            tbIndex++;
+          }
+
+          var rate;
+          if (tbIndex < tempBasals.length && tempBasals[tbIndex].start <= currentMs) {
+            rate = tempBasals[tbIndex].rate;
+          } else {
+            rate = getProfileBasalRate(new Date(currentMs));
+          }
+
+          total += rate / 60;
+          currentMs += 60000;
+        }
+        return total;
+      }
+
+      function calcStatsForPeriod(startDate, endDate) {
+        var startMs = startDate.getTime();
+        var endMs = endDate.getTime();
+        
+        var periodEntries = state.entries.filter(function(e) { return e.date >= startMs && e.date < endMs; });
+        var periodTreats = state.treatments.filter(function(t) { var d = toTimeMs(t, 'created_at'); return d >= startMs && d < endMs; });
+        
+        var targetMax = state.targetMode === 'titr' ? 140 : 180;
+        var tbr = 0, tir = 0, tar = 0, mean = 0, cv = 0, tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
+        
+        var values = periodEntries.map(function(e) { return e.sgv; });
+        var total = values.length;
+        
+        if (total > 0) {
+          tbr54 = values.filter(function(v) { return v < 54; }).length / total * 100;
+          tbr70 = values.filter(function(v) { return v >= 54 && v < 70; }).length / total * 100;
+          tbr = tbr54 + tbr70;
+          tir = values.filter(function(v) { return v >= 70 && v <= targetMax; }).length / total * 100;
+          tar = values.filter(function(v) { return v > targetMax; }).length / total * 100;
+          tar250 = values.filter(function(v) { return v > 250; }).length / total * 100;
+          
+          tirScore = tir - (5 * tbr54) - (2 * tbr70) - (1 * tar250);
+          if (state.targetMode === 'titr') {
+             var pH = values.filter(function(v) { return v > 140 && v <= 250; }).length / total * 100;
+             tirScore -= (0.5 * pH);
+          }
+          tirScore = Math.max(0, Math.min(100, tirScore));
+          
+          mean = values.reduce(function(a, b) { return a + b; }, 0) / total;
+          var sd = Math.sqrt(values.reduce(function(a, b) { return a + Math.pow(b - mean, 2); }, 0) / total);
+          cv = mean > 0 ? (sd / mean) * 100 : 0;
+        }
+        
+        var totalCarbs = 0, bolus = 0, cb = 0;
+        periodTreats.forEach(function(t) {
+          var carbs = Number(t.carbs || 0);
+          if (Number.isFinite(carbs) && carbs > 0) totalCarbs += carbs;
+          var insulin = Number(t.insulin || 0);
+          if (!Number.isFinite(insulin) || insulin <= 0) return;
+          var type = (t.eventType || '').toLowerCase();
+          if (type.includes('temp basal') || type.includes('profile')) return;
+          if (isLikelyCB(t)) cb += insulin;
+          else bolus += insulin;
+        });
+        
+        var basal = calculateIntegralBasal(startDate, endDate, periodTreats);
+        var tdd = basal + bolus + cb;
+        var activeInsulin = bolus + cb;
+        var crBolus = bolus > 0 ? totalCarbs / bolus : 0;
+        var crTotal = activeInsulin > 0 ? totalCarbs / activeInsulin : 0;
+        var a1cResult = a1cCalculator.analyze(periodEntries);
+        
+        return { 
+          tbr: tbr, tir: tir, tar: tar, tirScore: tirScore, 
+          carbs: totalCarbs, bolus: bolus, cb: cb, basal: basal, tdd: tdd, 
+          mean: mean, cv: cv, crBolus: crBolus, crTotal: crTotal, 
+          gmi: a1cResult.gmi, adjustedGmi: a1cResult.adjustedGmi 
+        };
+      }
+
+      function renderStats(prefix, stats, days) {
+        safeSetStyle(prefix + '-tbr', 'height', Math.min(100, Math.max(0, stats.tbr)) + '%');
+        safeSetStyle(prefix + '-tir', 'height', Math.min(100, Math.max(0, stats.tir)) + '%');
+        safeSetStyle(prefix + '-tar', 'height', Math.min(100, Math.max(0, stats.tar)) + '%');
+        
+        safeSetText(prefix + '-tir-val', Math.round(stats.tir) + '%');
+        safeSetText(prefix + '-tir-score', Math.round(stats.tirScore).toString());
+        
+        var tdd = stats.tdd / days;
+        var basal = stats.basal / days;
+        var bolus = stats.bolus / days;
+        var cb = stats.cb / days;
+        
+        safeSetText(prefix + '-tdd', tdd.toFixed(1));
+        safeSetText(prefix + '-basal', basal.toFixed(1));
+        safeSetText(prefix + '-cb', cb.toFixed(1));
+        safeSetText(prefix + '-bolus', bolus.toFixed(1));
+        safeSetText(prefix + '-carbs', Math.round(stats.carbs / days));
+        
+        safeSetText(prefix + '-mean', stats.mean > 0 ? Math.round(stats.mean) : 0);
+        safeSetText(prefix + '-cv', Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+        
+        safeSetText(prefix + '-cr-bolus', stats.crBolus.toFixed(1));
+        safeSetText(prefix + '-cr-total', stats.crTotal.toFixed(1));
+        safeSetText(prefix + '-gmi', stats.gmi.toFixed(1));
+        safeSetText(prefix + '-ea1c', stats.adjustedGmi.toFixed(1));
+        
+        if (tdd > 0) {
+          safeSetStyle(prefix + '-basal-bar', 'width', (basal / tdd * 100) + '%');
+          safeSetStyle(prefix + '-cb-bar', 'width', (cb / tdd * 100) + '%');
+          safeSetStyle(prefix + '-bolus-bar', 'width', (bolus / tdd * 100) + '%');
+        } else {
+          safeSetStyle(prefix + '-basal-bar', 'width', '0%');
+          safeSetStyle(prefix + '-cb-bar', 'width', '0%');
+          safeSetStyle(prefix + '-bolus-bar', 'width', '0%');
+        }
+      }
+
+      function calculateSummaries() {
+        var targetLabel = state.targetMode === 'titr' ? 'TITR' : 'TIR';
+        safeSetText('label-tir', targetLabel);
+        safeSetText('label-tir-score', targetLabel + ' SCORE');
+
+        var baseEnd = new Date(state.dataEndDate);
+        var todayStart = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0);
+        
+        var yesterdayStart = new Date(todayStart.getTime() - 86400000);
+        var yesterdayEnd = new Date(todayStart.getTime() - 1);
+        
+        var sevenDaysStart = new Date(todayStart.getTime() - (6 * 86400000));
+        
+        var periodDays = state.periodWeeks * 7;
+        var periodStart = new Date(todayStart.getTime() - ((periodDays - 1) * 86400000));
+
+        safeSetText('summary-period-label', state.periodWeeks + 'W');
+        safeSetText('summary-period-title', periodDays + ' Days');
+
+        renderStats('td', calcStatsForPeriod(todayStart, baseEnd), 1);
+        renderStats('yd', calcStatsForPeriod(yesterdayStart, yesterdayEnd), 1);
+        renderStats('7d', calcStatsForPeriod(sevenDaysStart, baseEnd), 7);
+        renderStats('pw', calcStatsForPeriod(periodStart, baseEnd), periodDays);
+      }
+
+      async function fetchData() {
+        var urlBase = state.url.trim().replace(/\/$/, '');
+        if(!urlBase) {
+          alert("Nightscout URL is empty.");
+          return;
+        }
+        
+        if (window.location.protocol === 'https:' && urlBase.startsWith('http:')) {
+           alert("【Mixed Content 警告】\nダッシュボード（HTTPS）からHTTPのNightscoutへはスマホブラウザの仕様によりアクセスできません。URL側を https:// に修正してください。");
+        }
+        
+        showLoading();
+        
+        var now = new Date();
+        var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        
+        var MAX_PERIOD_WEEKS = 12;
+        var totalDaysToFetch = MAX_PERIOD_WEEKS * 7 * 2;
+        var startDate = new Date(endDate.getTime() - totalDaysToFetch * 86400000 + 1);
+        
+        var buildQs = function(path, dateField) {
+           var base = urlBase + path + '?find[' + dateField + '][$gte]=' + startDate.toISOString() + '&find[' + dateField + '][$lte]=' + endDate.toISOString() + '&count=100000';
+           if (state.token) base += '&token=' + encodeURIComponent(state.token);
+           return base;
+        };
+        
+        try {
+          var profilePath = urlBase + '/api/v1/profile.json';
+          if (state.token) profilePath += '?token=' + encodeURIComponent(state.token);
+          
+          var fetchWithCheck = async function(url) {
+             var res = await fetch(url, { headers: { Accept: 'application/json' }}).catch(function(e) {
+                throw new Error("Network request failed. スマホのセキュリティ制限またはCORS設定エラーです。 (" + e.message + ")");
+             });
+             if (!res.ok) throw new Error("Server responded with status: " + res.status);
+             return res.json();
+          };
+
+          var [rawEntries, rawTreats, profiles] = await Promise.all([
+             fetchWithCheck(buildQs('/api/v1/entries.json', 'dateString')),
+             fetchWithCheck(buildQs('/api/v1/treatments.json', 'created_at')),
+             fetchWithCheck(profilePath)
+          ]);
+          
+          state.entries = rawEntries.map(function(d) {
+             var fallbackVal3 = d.sgv !== undefined ? d.sgv : (d.glucose !== undefined ? d.glucose : d.value);
+             return {
+                date: new Date(d.dateString || d.date).getTime(),
+                sgv: Number(fallbackVal3)
+             };
+          }).filter(function(d) { return Number.isFinite(d.sgv) && d.sgv > 0; }).sort(function(a,b) { return a.date - b.date; });
+          
+          state.treatments = Array.isArray(rawTreats) ? rawTreats : [];
+          
+          if (Array.isArray(profiles) && profiles.length > 0) {
+             var defaultName = profiles[0].defaultProfile;
+             state.profile = (profiles[0].store && profiles[0].store[defaultName]) ? profiles[0].store[defaultName] : null;
+          }
+
+          state.dataEndDate = endDate.getTime();
+          state.dataStartDate = startDate.getTime();
+          
+          state.selectedDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0, 0).getTime();
+          
+          hideLoading();
+          updateAllDashboards();
+          
+        } catch (err) {
+          console.error(err);
+          hideLoading();
+          alert("【データ取得失敗】\n" + err.message);
+          showModal(true);
+        }
+      }
+
+      // --- Chart & Interaction Logistics ---
+      if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = 'Inter, sans-serif';
+      }
+
+      function getTargetAnnotation() {
+        var yMax = state.targetMode === 'titr' ? 140 : 180;
+        return {
+          type: 'box',
+          yMin: 70, yMax: yMax,
+          backgroundColor: 'rgba(74, 222, 128, 0.08)',
+          borderWidth: 0,
+          drawTime: 'beforeDatasetsDraw'
+        };
+      }
+
+      function getDotColor(ctx) {
+        var y = ctx.raw && ctx.raw.y;
+        var yMax = state.targetMode === 'titr' ? 140 : 180;
+        if (y < 70) return '#f87171';
+        if (y > yMax) return '#facc15';
+        return '#4ade80';
+      }
+
+      function addTargetTicks(axis) {
+         var yMax = state.targetMode === 'titr' ? 140 : 180;
+         if (!axis.ticks.find(function(t) { return t.value === 70; })) axis.ticks.push({ value: 70 });
+         if (!axis.ticks.find(function(t) { return t.value === yMax; })) axis.ticks.push({ value: yMax });
+         axis.ticks.sort(function(a, b) { return a.value - b.value; });
+      }
+      function getTickFont(ctx) {
+         var yMax = state.targetMode === 'titr' ? 140 : 180;
+         return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? { size: 10, weight: '900' } : { size: 9, weight: 'bold' };
+      }
+      function getTickColor(ctx) {
+         var yMax = state.targetMode === 'titr' ? 140 : 180;
+         return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? '#4ade80' : 'rgba(148, 163, 184, 0.7)';
+      }
+
+      function renderCGMChart(canvasId, entries, timeStart, timeEnd) {
+        var canvasEl = document.getElementById(canvasId);
+        if(!canvasEl || typeof Chart === 'undefined') return;
+        var ctx = canvasEl.getContext('2d');
+        var dataPoints = entries.map(function(e) { return { x: e.date, y: e.sgv }; });
+        var maxDataY = dataPoints.length ? Math.max.apply(Math, dataPoints.map(function(d){return d.y;})) : 180;
+        
+        if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+        
+        chartInstances[canvasId] = new Chart(ctx, {
+          type: 'scatter',
+          data: {
+            datasets: [{
+               data: dataPoints,
+               backgroundColor: getDotColor,
+               pointRadius: 2.5,
+               borderWidth: 0
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: {
+              legend: { display: false }, tooltip: { enabled: false },
+              annotation: { annotations: { target: getTargetAnnotation() } }
+            },
+            layout: { padding: { left: 5, right: 10, top: 10, bottom: 0 } },
+            scales: {
+              x: {
+                type: 'time', min: timeStart, max: timeEnd,
+                time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                ticks: { font: { size: 10, weight: 'bold' } }
+              },
+              y: {
+                min: 40, max: Math.max(250, maxDataY + 20),
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                afterBuildTicks: addTargetTicks,
+                ticks: { font: getTickFont, color: getTickColor }
+              }
+            }
+          }
+        });
+      }
+
+      function buildAgpData(entries) {
+        var slots = Array.from({ length: 48 }, function() { return []; });
+        entries.forEach(function(e) {
+          var d = new Date(e.date);
+          var slot = Math.floor((d.getHours() * 60 + d.getMinutes()) / 30);
+          if (slot >= 0 && slot < 48) slots[slot].push(e.sgv);
+        });
+        
+        var p = { p10: [], p25: [], p50: [], p75: [], p90: [], times: [] };
+        for (var i = 0; i <= 48; i++) {
+          var idx = i === 48 ? 0 : i;
+          var data = [].concat(slots[idx]).sort(function(a, b) { return a - b; });
+          p.times.push(i * 0.5);
+          
+          if (!data.length) { 
+            p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null); 
+            continue; 
+          }
+          
+          var getPercentile = function(q) { 
+            var pos = (data.length - 1) * q; 
+            var base = Math.floor(pos); 
+            var rest = pos - base; 
+            return data[base + 1] !== undefined ? data[base] + rest * (data[base + 1] - data[base]) : data[base]; 
+          };
+          
+          p.p10.push(getPercentile(0.10)); p.p25.push(getPercentile(0.25)); p.p50.push(getPercentile(0.50)); p.p75.push(getPercentile(0.75)); p.p90.push(getPercentile(0.90));
+        }
+        return p;
+      }
+
+      function renderAGPChart(canvasId, entries) {
+        var canvasEl = document.getElementById(canvasId);
+        if(!canvasEl || typeof Chart === 'undefined') return;
+        var ctx = canvasEl.getContext('2d');
+        var agpData = buildAgpData(entries);
+        
+        if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
+        
+        chartInstances[canvasId] = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: agpData.times,
+            datasets: [
+              { data: agpData.p10, fill: false, borderWidth: 0, pointRadius: 0, tension: 0.3 },
+              { data: agpData.p25, fill: '-1', backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+              { data: agpData.p75, fill: '-1', backgroundColor: 'rgba(74,222,128,0.5)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+              { data: agpData.p90, fill: '-1', backgroundColor: 'rgba(74,222,128,0.2)', borderWidth: 0, pointRadius: 0, tension: 0.3 },
+              { data: agpData.p50, fill: false, borderColor: 'rgba(74,222,128,1)', borderWidth: 2.5, pointRadius: 0, tension: 0.3 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false, spanGaps: true,
+            plugins: {
+              legend: { display: false }, tooltip: { enabled: false },
+              annotation: { annotations: { target: getTargetAnnotation() } }
+            },
+            layout: { padding: { left: 5, right: 10, top: 10, bottom: 0 } },
+            scales: {
+              x: {
+                type: 'linear', min: 0, max: 24,
+                ticks: { stepSize: 3, callback: function(v) { return v + ':00'; }, font: { size: 10, weight: 'bold' } },
+                grid: { color: 'rgba(51,65,85,0.4)' }
+              },
+              y: {
+                min: 40, max: 300,
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                afterBuildTicks: addTargetTicks,
+                ticks: { font: getTickFont, color: getTickColor }
+              }
+            }
+          }
+        });
+      }
+
+      function updateTL() {
+        var start = state.selectedDate;
+        var end = start + 86400000 - 1;
+        var stats = calcStatsForPeriod(new Date(start), new Date(end));
+        document.getElementById('tl-date').textContent = formatShortDate(start);
+        document.getElementById('tl-score').textContent = Math.round(stats.tirScore).toString();
+        
+        var dayEntries = state.entries.filter(function(e) { return e.date >= start && e.date <= end; });
+        renderCGMChart('tl-chart', dayEntries, start, end);
+      }
+
+      function findBestDay() {
+        var searchEnd = new Date(state.dataEndDate);
+        var searchStart = new Date(searchEnd.getTime() - (state.periodWeeks * 7 * 86400000) + 1);
+        searchStart.setHours(0,0,0,0);
+        
+        var bestScore = -1;
+        var bestDate = null;
+        var bestEntries = [];
+        var todayMs = new Date(searchEnd.getFullYear(), searchEnd.getMonth(), searchEnd.getDate(), 0, 0, 0, 0).getTime();
+        
+        for(var ms = searchStart.getTime(); ms <= searchEnd.getTime(); ms += 86400000) {
+           if (ms === todayMs) continue;
+           var dayEnd = ms + 86400000 - 1;
+           var stats = calcStatsForPeriod(new Date(ms), new Date(dayEnd));
+           var dayEntries = state.entries.filter(function(e) { return e.date >= ms && e.date <= dayEnd; });
+           
+           if(dayEntries.length < 144) continue;
+           if(stats.tirScore > bestScore) {
+              bestScore = stats.tirScore;
+              bestDate = ms;
+              bestEntries = dayEntries;
+           }
+        }
+        return { date: bestDate, entries: bestEntries, score: bestScore };
+      }
+
+      function updateTR() {
+        var best = findBestDay();
+        document.getElementById('tr-period-badge').textContent = state.periodWeeks + 'W';
+        
+        if(!best.date) {
+           document.getElementById('tr-date').textContent = '--/--';
+           document.getElementById('tr-score').textContent = '--';
+           if(chartInstances['tr-chart']) chartInstances['tr-chart'].destroy();
+           return;
+        }
+        
+        document.getElementById('tr-date').textContent = formatShortDate(best.date);
+        document.getElementById('tr-score').textContent = Math.round(best.score).toString();
+        renderCGMChart('tr-chart', best.entries, best.date, best.date + 86400000 - 1);
+      }
+
+      function getAgpPeriodInfo(isCurrent, is1w) {
+        var baseEndObj = new Date(state.dataEndDate);
+        var latestDayEndMs = new Date(baseEndObj.getFullYear(), baseEndObj.getMonth(), baseEndObj.getDate(), 23, 59, 59, 999).getTime();
+        var daysCount = is1w ? 7 : (state.periodWeeks * 7);
+        var durationMs = daysCount * 86400000;
+        
+        if (isCurrent) {
+           var end = latestDayEndMs;
+           var start = end - durationMs + 1;
+           return { start: start, end: end };
+        } else {
+           var currentStart = latestDayEndMs - durationMs + 1;
+           var end2 = currentStart - 1;
+           var start2 = end2 - durationMs + 1;
+           return { start: start2, end: end2 };
+        }
+      }
+
+      function drawAgpPanelData(isCurrent, is1w) {
+         var span = getAgpPeriodInfo(isCurrent, is1w);
+         var stats = calcStatsForPeriod(new Date(span.start), new Date(span.end));
+         var entries = state.entries.filter(function(e) { return e.date >= span.start && e.date <= span.end; });
+         
+         var prefix = isCurrent ? 'bl' : 'br';
+         var suffix = is1w ? '1w' : 'full';
+         
+         safeSetText(prefix + '-date-range-' + suffix, formatShortDate(span.start) + ' - ' + formatShortDate(span.end));
+         safeSetText(prefix + '-avg-' + suffix, stats.mean > 0 ? Math.round(stats.mean) : '--');
+         safeSetText(prefix + '-cv-' + suffix, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+         safeSetText(prefix + '-gmi-' + suffix, stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
+         safeSetText(prefix + '-adj-' + suffix, stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
+         
+         safeSetText(prefix + '-inrange-' + suffix, stats.tir.toFixed(1) + '%');
+         safeSetText(prefix + '-score-' + suffix, Math.round(stats.tirScore).toString());
+         
+         renderAGPChart(prefix + '-chart-' + suffix, entries);
+      }
+
+      function updateAGPPanels() {
+        drawAgpPanelData(true, true);
+        drawAgpPanelData(true, false);
+        drawAgpPanelData(false, true);
+        drawAgpPanelData(false, false);
+        toggleAgpVisibility();
+      }
+
+      function toggleAgpVisibility() {
+        var is1w = state.agpPeriodMode === '1w';
+        var toggleElements = function(prefix) {
+           var head1w = document.getElementById(prefix + '-header-1w');
+           var headFull = document.getElementById(prefix + '-header-full');
+           var cont1w = document.getElementById(prefix + '-container-1w');
+           var contFull = document.getElementById(prefix + '-container-full');
+           
+           if(is1w) {
+              if(head1w) { head1w.classList.remove('hidden'); head1w.classList.add('flex'); }
+              if(cont1w) cont1w.classList.remove('hidden');
+              if(headFull) { headFull.classList.add('hidden'); headFull.classList.remove('flex'); }
+              if(contFull) contFull.classList.add('hidden');
+           } else {
+              if(headFull) { headFull.classList.remove('hidden'); headFull.classList.add('flex'); }
+              if(contFull) contFull.classList.remove('hidden');
+              if(head1w) { head1w.classList.add('hidden'); head1w.classList.remove('flex'); }
+              if(cont1w) cont1w.classList.add('hidden');
+           }
+        };
+        toggleElements('bl');
+        toggleElements('br');
+      }
+
+      function updateNavControls() {
+        var baseEnd = new Date(state.dataEndDate);
+        var latestDayMs = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0).getTime();
+        
+        document.getElementById('btn-next-day').disabled = state.selectedDate >= latestDayMs;
+        document.getElementById('btn-next-day').style.opacity = document.getElementById('btn-next-day').disabled ? '0.3' : '1';
+        
+        var maxDaysNeeded = (state.periodWeeks * 7 * 2); 
+        var minAllowedDate = latestDayMs - (maxDaysNeeded * 86400000) + 1;
+        document.getElementById('btn-prev-day').disabled = (state.selectedDate - 86400000) < minAllowedDate;
+        document.getElementById('btn-prev-day').style.opacity = document.getElementById('btn-prev-day').disabled ? '0.3' : '1';
+      }
+
+      function updateAllDashboards() {
+        if(!state.entries.length) return;
+        calculateSummaries();
+        updateTL();
+        updateTR();
+        updateAGPPanels();
+        updateNavControls();
+      }
+
+      function updateTargetToggleUI() {
+        var label = document.getElementById('header-target-label');
+        if (label) label.textContent = state.targetMode.toUpperCase();
+        var select = document.getElementById('target-mode');
+        if (select) select.value = state.targetMode;
+      }
+
+      function updatePeriodToggleUI() {
+        var select = document.getElementById('period-weeks');
+        if (select) select.value = state.periodWeeks.toString();
+        
+        document.querySelectorAll('.period-btn').forEach(function(btn) {
+          var w = parseInt(btn.dataset.weeks, 10);
+          if (w === state.periodWeeks) {
+            btn.classList.add('bg-slate-600', 'text-white', 'shadow');
+            btn.classList.remove('text-slate-300', 'hover:text-white');
+          } else {
+            btn.classList.remove('bg-slate-600', 'text-white', 'shadow');
+            btn.classList.add('text-slate-300', 'hover:text-white');
+          }
+        });
+      }
+
+      // --- Event Listeners 登録 (安全な実在検証付) ---
+      var btnOpenSettings = document.getElementById('btn-open-settings');
+      if(btnOpenSettings) btnOpenSettings.addEventListener('click', function() { showModal(false); });
       
-      document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
-      document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
+      var btnCloseSettings = document.getElementById('btn-close-settings');
+      if(btnCloseSettings) btnCloseSettings.addEventListener('click', hideModal);
       
+      var btnSaveSettings = document.getElementById('btn-save-settings');
+      if(btnSaveSettings) btnSaveSettings.addEventListener('click', function() {
+        var newUrl = document.getElementById('ns-url').value;
+        var newToken = document.getElementById('ns-token').value;
+        var newTargetMode = document.getElementById('target-mode').value;
+        var newPeriodWeeks = parseInt(document.getElementById('period-weeks').value, 10);
+
+        var requiresFetch = (state.url !== newUrl) || (state.token !== newToken);
+
+        state.url = newUrl;
+        state.token = newToken;
+        state.targetMode = newTargetMode;
+        state.periodWeeks = newPeriodWeeks;
+        
+        try {
+          localStorage.setItem('ns_url', state.url);
+          localStorage.setItem('ns_token', state.token);
+          localStorage.setItem('ns_targetMode', state.targetMode);
+          localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+        } catch(e) {
+          console.warn("Could not write to localStorage.");
+        }
+        
+        document.getElementById('bl-period-badge-full').textContent = state.periodWeeks + " Weeks";
+        document.getElementById('br-period-badge-full').textContent = state.periodWeeks + " Weeks";
+        
+        updateTargetToggleUI();
+        updatePeriodToggleUI();
+        hideModal();
+
+        if (requiresFetch || state.entries.length === 0) {
+          fetchData();
+        } else {
+          if (state.entries.length > 0) {
+             updateAllDashboards();
+          }
+        }
+      });
+
+      var btnToggleTarget = document.getElementById('btn-toggle-target');
+      if(btnToggleTarget) btnToggleTarget.addEventListener('click', function() {
+         state.targetMode = state.targetMode === 'tir' ? 'titr' : 'tir';
+         try { localStorage.setItem('ns_targetMode', state.targetMode); } catch(e){}
+         updateTargetToggleUI();
+         if (state.entries.length > 0) {
+            updateAllDashboards();
+         }
+      });
+
+      document.querySelectorAll('.period-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          var newWeeks = parseInt(e.currentTarget.dataset.weeks, 10);
+          if (state.periodWeeks === newWeeks) return;
+          
+          state.periodWeeks = newWeeks;
+          try { localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString()); } catch(e){}
+          
+          document.getElementById('bl-period-badge-full').textContent = state.periodWeeks + " Weeks";
+          document.getElementById('br-period-badge-full').textContent = state.periodWeeks + " Weeks";
+          
+          updatePeriodToggleUI();
+          
+          if (state.entries.length > 0) {
+            updateAllDashboards();
+          }
+        });
+      });
+
+      // HTMLのonclickからの移行用グローバルマッピング
+      window.toggleAgpPeriod = function() {
+         state.agpPeriodMode = state.agpPeriodMode === '1w' ? 'full' : '1w';
+         toggleAgpVisibility();
+      };
+
+      var btnPrevDay = document.getElementById('btn-prev-day');
+      if(btnPrevDay) btnPrevDay.addEventListener('click', function() {
+         if(!state.entries.length) return;
+         state.selectedDate -= 86400000;
+         updateTL();         
+         updateNavControls(); 
+      });
+      
+      var btnNextDay = document.getElementById('btn-next-day');
+      if(btnNextDay) btnNextDay.addEventListener('click', function() {
+         if(!state.entries.length) return;
+         state.selectedDate += 86400000;
+         updateTL();         
+         updateNavControls(); 
+      });
+
+      // --- Kickstart UI ---
       updateTargetToggleUI();
       updatePeriodToggleUI();
-      hideModal();
+      
+      if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+      }
 
-      if (requiresFetch || state.entries.length === 0) {
-        fetchData();
+      if (!state.url) {
+        showModal(true);
       } else {
-        if (state.entries.length > 0) {
-           updateAllDashboards();
-        }
+        document.getElementById('bl-period-badge-full').textContent = state.periodWeeks + " Weeks";
+        document.getElementById('br-period-badge-full').textContent = state.periodWeeks + " Weeks";
+        fetchData();
       }
     });
 
-    document.getElementById('btn-toggle-target').addEventListener('click', () => {
-       state.targetMode = state.targetMode === 'tir' ? 'titr' : 'tir';
-       try { localStorage.setItem('ns_targetMode', state.targetMode); } catch(e){}
-       updateTargetToggleUI();
-       if (state.entries.length > 0) {
-          updateAllDashboards();
-       }
-    });
-
-    document.querySelectorAll('.period-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        const newWeeks = parseInt(e.currentTarget.dataset.weeks, 10);
-        if (state.periodWeeks === newWeeks) return;
-        
-        state.periodWeeks = newWeeks;
-        try { localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString()); } catch(e){}
-        
-        document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
-        document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
-        
-        updatePeriodToggleUI();
-        
-        if (state.entries.length > 0) {
-          updateAllDashboards();
-        }
-      });
-    });
-
-    function toggleAgpPeriod() {
-       state.agpPeriodMode = state.agpPeriodMode === '1w' ? 'full' : '1w';
-       toggleAgpVisibility();
-    }
-
-    document.getElementById('btn-prev-day').addEventListener('click', () => {
-       if(!state.entries.length) return;
-       state.selectedDate -= 86400000;
-       updateTL();         
-       updateNavControls(); 
-    });
-    
-    document.getElementById('btn-next-day').addEventListener('click', () => {
-       if(!state.entries.length) return;
-       state.selectedDate += 86400000;
-       updateTL();         
-       updateNavControls(); 
-    });
-
-    window.addEventListener('DOMContentLoaded', () => {
-       updateTargetToggleUI();
-       updatePeriodToggleUI();
-       if (!state.url) {
-          showModal(true);
-       } else {
-          document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
-          document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
-          fetchData();
-       }
-    });
-
-    window.addEventListener('resize', () => {
-       Object.values(chartInstances).forEach(chart => {
+    window.addEventListener('resize', function() {
+       Object.values(chartInstances).forEach(function(chart) {
           if (chart) chart.resize();
        });
     });
-
   </script>
 </body>
 </html>
