@@ -60,36 +60,36 @@
     }
 
     .layout-pattern-0 {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(310px, 42%) 1fr;
-  grid-template-areas:
-    "current summary"
-    "graph graph";
-}
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(310px, 42%) 1fr;
+      grid-template-areas:
+        "current summary"
+        "graph graph";
+    }
 
-.layout-pattern-1 {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(310px, 42%) 1fr;
-  grid-template-areas:
-    "summary current"
-    "graph graph";
-}
+    .layout-pattern-1 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: minmax(310px, 42%) 1fr;
+      grid-template-areas:
+        "summary current"
+        "graph graph";
+    }
 
-.layout-pattern-2 {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr minmax(310px, 42%);
-  grid-template-areas:
-    "graph graph"
-    "current summary";
-}
+    .layout-pattern-2 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr minmax(310px, 42%);
+      grid-template-areas:
+        "graph graph"
+        "current summary";
+    }
 
-.layout-pattern-3 {
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr minmax(310px, 42%);
-  grid-template-areas:
-    "graph graph"
-    "summary current";
-}
+    .layout-pattern-3 {
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr minmax(310px, 42%);
+      grid-template-areas:
+        "graph graph"
+        "summary current";
+    }
 
     @media (max-width: 768px) {
       #grid-container {
@@ -143,47 +143,6 @@
 
     canvas {
       display: block;
-    }
-
-
-    body.fullscreen-mode #grid-container {
-      height: 100dvh;
-    }
-
-    @media (max-width: 768px) {
-      body.fullscreen-mode #grid-container {
-        display: grid;
-        overflow: hidden;
-        grid-template-columns: 1fr;
-        grid-template-rows: auto auto minmax(0, 1fr);
-        grid-template-areas:
-          "current"
-          "summary"
-          "graph";
-      }
-
-      body.fullscreen-mode .area-current {
-        min-height: 0;
-        height: clamp(145px, 22dvh, 190px);
-      }
-
-      body.fullscreen-mode .area-summary {
-        min-height: 0;
-        height: clamp(210px, 30dvh, 270px);
-      }
-
-      body.fullscreen-mode .area-graph {
-        min-height: 0;
-        height: auto;
-      }
-
-      body.fullscreen-mode .panel {
-        flex: initial;
-      }
-
-      body.fullscreen-mode .area-graph .flex-1.relative {
-        min-height: 0;
-      }
     }
 
     .chart-tooltip {
@@ -261,7 +220,7 @@
             </div>
           </div>
         </div>
-        
+
         <div id="error-message"
           class="absolute bottom-2 text-red-400 text-xs hidden text-center bg-red-900/80 px-3 py-1 rounded-full w-3/4 max-w-xs border border-red-500">
         </div>
@@ -319,7 +278,8 @@
                 <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Summary
               </h2>
 
-              <div class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 py-1.5 min-h-0 justify-center gap-1.5 overflow-y-auto">
+              <div
+                class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 py-1.5 min-h-0 justify-center gap-1.5 overflow-y-auto">
                 <div class="grid grid-cols-[auto_1fr_1fr] items-end border-b border-slate-600/50 pb-0.5 flex-none">
                   <div class="w-16 sm:w-20"></div>
                   <div
@@ -344,7 +304,6 @@
                   <div class="w-16 sm:w-20 flex flex-col leading-none">
                     <span class="text-[11px] sm:text-[13px] text-pink-400 font-bold uppercase">GMI<span
                         class="text-slate-500 mx-0.5">/</span>Adj</span>
-                    <span class="text-[8px] text-pink-500/70 mt-0.5 font-medium">Adj is experimental</span>
                   </div>
                   <div
                     class="text-center font-black text-pink-300 text-base sm:text-lg leading-none flex items-center justify-center gap-0.5">
@@ -479,27 +438,34 @@
       <div class="panel area-graph flex flex-col min-h-0 relative">
         <div class="flex justify-between items-center mb-1 px-1 flex-none relative gap-2">
           <div class="flex items-center gap-1 min-w-0 flex-none">
-            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition" aria-label="previous day">
+            <button id="btn-prev" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition"
+              aria-label="previous day">
               <i data-lucide="chevron-left" class="w-4 h-4"></i>
             </button>
-            <div id="chart-date-label" class="min-w-[92px] text-center font-black text-slate-100 text-xs bg-slate-900/80 border border-slate-600/60 rounded px-2 py-1 shadow z-30">today</div>
-            <button id="btn-next" class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed" aria-label="next day" disabled>
+            <div id="chart-date-label"
+              class="min-w-[104px] text-center font-black text-slate-100 text-xs bg-slate-900/80 border border-slate-600/60 rounded px-2 py-1 shadow z-30">
+              today</div>
+            <button id="btn-next"
+              class="p-1.5 bg-slate-700/50 hover:bg-slate-600 rounded text-white transition opacity-50 cursor-not-allowed"
+              aria-label="next day" disabled>
               <i data-lucide="chevron-right" class="w-4 h-4"></i>
             </button>
             <button id="btn-today"
               class="ml-1 px-3 py-1 bg-slate-600 hover:bg-slate-500 text-white shadow rounded text-[11px] font-black transition">Today</button>
           </div>
-          
+
           <div class="flex bg-slate-800/80 rounded border border-slate-700/50 p-0.5 text-xs font-medium flex-none">
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="3">3h</button>
-            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow" data-hours="6">6h</button>
+            <button class="time-btn px-2.5 py-1 rounded transition bg-slate-600 text-white shadow"
+              data-hours="6">6h</button>
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="12">12h</button>
             <button class="time-btn px-2.5 py-1 rounded transition text-slate-200" data-hours="24">24h</button>
           </div>
         </div>
         <div id="selected-day-stats"
           class="absolute right-3 top-10 hidden md:flex z-20 flex-col gap-1.5 rounded-lg bg-slate-900/90 border border-slate-600/70 px-3 py-2 shadow-xl pointer-events-none min-w-[168px]">
-          <div id="selected-day-title" class="text-[10px] font-black text-slate-300 tracking-widest text-right">DAY</div>
+          <div id="selected-day-title" class="text-[10px] font-black text-slate-300 tracking-widest text-right">DAY
+          </div>
           <div class="flex flex-col items-stretch gap-1.5">
             <div class="flex items-end justify-between leading-none">
               <span class="text-[10px] font-black text-green-400 tracking-widest">TIR</span>
@@ -517,13 +483,19 @@
           </div>
           <div class="grid grid-cols-2 gap-x-3 gap-y-1 text-right pt-0.5">
             <span class="text-[10px] font-bold text-slate-300 text-left">AVG</span>
-            <span><span id="selected-day-avg" class="text-sm font-black text-white">--</span><span class="text-[9px] text-slate-500 ml-0.5">mg/dL</span></span>
+            <span><span id="selected-day-avg" class="text-sm font-black text-white">--</span><span
+                class="text-[9px] text-slate-500 ml-0.5">mg/dL</span></span>
             <span class="text-[10px] font-bold text-pink-300 text-left">GMI / ADJ</span>
-            <span><span id="selected-day-gmi" class="text-sm font-black text-pink-300">--</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-adj" class="text-sm font-black text-pink-200">--</span></span>
+            <span><span id="selected-day-gmi" class="text-sm font-black text-pink-300">--</span><span
+                class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-adj"
+                class="text-sm font-black text-pink-200">--</span></span>
             <span class="text-[10px] font-bold text-yellow-400 text-left">CARBS</span>
-            <span><span id="selected-day-carbs" class="text-sm font-black text-yellow-300">--</span><span class="text-[9px] text-slate-500 ml-0.5">g</span></span>
+            <span><span id="selected-day-carbs" class="text-sm font-black text-yellow-300">--</span><span
+                class="text-[9px] text-slate-500 ml-0.5">g</span></span>
             <span class="text-[10px] font-bold text-orange-400 text-left">CR</span>
-            <span><span id="selected-day-cr-bolus" class="text-sm font-black text-orange-200">--</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-cr-total" class="text-sm font-black text-orange-300">--</span></span>
+            <span><span id="selected-day-cr-bolus" class="text-sm font-black text-orange-200">--</span><span
+                class="text-[9px] text-slate-500 mx-0.5">/</span><span id="selected-day-cr-total"
+                class="text-sm font-black text-orange-300">--</span></span>
           </div>
         </div>
         <div
@@ -568,7 +540,6 @@
 
   <script>
     lucide.createIcons();
-    setTimeout(syncFullscreenClass, 0);
 
     class ClinicalA1cCalculator {
       constructor(config = {}) {
@@ -634,28 +605,6 @@
     let agpMode = false;
     let currentLayoutPattern = 0;
     let idleMinutes = 0;
-
-
-    function syncFullscreenClass() {
-      const isFullscreen =
-        !!document.fullscreenElement ||
-        !!document.webkitFullscreenElement ||
-        window.matchMedia('(display-mode: fullscreen)').matches ||
-        window.navigator.standalone === true;
-
-      document.body.classList.toggle('fullscreen-mode', isFullscreen);
-
-      if (chartInstance) {
-        setTimeout(() => {
-          chartInstance.resize();
-          chartInstance.update('none');
-        }, 120);
-      }
-    }
-
-    document.addEventListener('fullscreenchange', syncFullscreenClass);
-    document.addEventListener('webkitfullscreenchange', syncFullscreenClass);
-    window.addEventListener('resize', syncFullscreenClass);
 
     const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
@@ -1170,12 +1119,18 @@
       selectedDayEnd.setDate(selectedDayEnd.getDate() + 1);
 
       let targetStart = new Date(selectedDayStart);
-      if (state.offsetDays === 0 && state.timeRangeHours < 24) {
+      let initialDisplayMax;
+
+      if (state.offsetDays === 0) {
         const nowMs = Date.now();
-        const earliestToday = selectedDayStart.getTime();
-        targetStart = new Date(Math.max(earliestToday, nowMs - state.timeRangeHours * 60 * 60 * 1000));
+        targetStart = new Date(nowMs - state.timeRangeHours * 60 * 60 * 1000);
+        initialDisplayMax = nowMs;
+      } else {
+        initialDisplayMax = Math.min(
+          targetStart.getTime() + state.timeRangeHours * 60 * 60 * 1000,
+          timelineEnd.getTime()
+        );
       }
-      const initialDisplayMax = Math.min(targetStart.getTime() + state.timeRangeHours * 60 * 60 * 1000, timelineEnd.getTime());
       const panMaxEnd = new Date(timelineEnd);
 
       const plotEntries = state.data.entries.filter(e => {
@@ -1553,12 +1508,12 @@
     }
 
 
-    function formatRelativeDayLabel(offsetDays) {
-      const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
-      if (n === 0) return 'today';
-      if (n === 1) return 'yesterday';
-      return `${n}daysago`;
-    }
+function formatRelativeDayLabel(offsetDays) {
+  const n = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+  if (n === 0) return 'Today';
+  if (n === 1) return 'Yesterday';
+  return `${n} days ago`;
+}
 
     function getSelectedDayRange() {
       const base = new Date();
