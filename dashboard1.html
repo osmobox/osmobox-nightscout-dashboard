@@ -42,7 +42,7 @@
       display: grid;
       grid-template-columns: 86px repeat(4, minmax(64px, 1fr));
       gap: 4px;
-      min-width: 350px; /* モバイルでの潰れすぎ防止 */
+      min-width: 350px;
     }
     @media (max-width: 768px) {
       .summary-grid {
@@ -91,7 +91,6 @@
         <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Statistical Summary
       </h2>
 
-      <!-- スマホでは縦並び(grid-cols-1)、md以上で横並び(md:grid-cols-[140px_1fr]等)に変形 -->
       <div class="flex-1 grid grid-cols-1 md:grid-cols-[140px_1fr] lg:grid-cols-[170px_1fr] gap-3 min-h-0 overflow-y-auto pr-1">
         
         <!-- Left Column: TIR Bars -->
@@ -149,7 +148,7 @@
           </div>
         </div>
 
-        <!-- Right Column: Detail Stats (はみ出し時に横スクロール可能なコンテナ化) -->
+        <!-- Right Column: Detail Stats -->
         <div class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 sm:px-3 py-2 min-h-0 gap-2 overflow-x-auto overflow-y-hidden select-text">
           <div class="grid summary-grid items-end border-b border-slate-600/50 pb-1 flex-none">
             <div></div>
@@ -409,6 +408,11 @@
   </div>
 
   <script>
+    // モバイルのデバッグ用例外検知ラッパー
+    window.addEventListener('error', function(e) {
+      alert("Script Error: " + e.message + "\nLine: " + e.lineno + "\nFile: " + e.filename);
+    });
+
     lucide.createIcons();
 
     // --- Clinical A1c Calculator ---
@@ -482,12 +486,26 @@
     }
     const a1cCalculator = new ClinicalA1cCalculator();
 
-    // --- State Management ---
+    // --- State Management 安全な例外ガード付き ---
+    let savedUrl = '';
+    let savedToken = '';
+    let savedTargetMode = 'tir';
+    let savedPeriodWeeks = 4;
+
+    try {
+      savedUrl = localStorage.getItem('ns_url') || '';
+      savedToken = localStorage.getItem('ns_token') || '';
+      savedTargetMode = localStorage.getItem('ns_targetMode') || 'tir';
+      savedPeriodWeeks = parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10);
+    } catch(e) {
+      console.warn("localStorage is not accessible on this browser layout.");
+    }
+
     const state = {
-      url: localStorage.getItem('ns_url') || '',
-      token: localStorage.getItem('ns_token') || '',
-      targetMode: localStorage.getItem('ns_targetMode') || 'tir',
-      periodWeeks: parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10),
+      url: savedUrl,
+      token: savedToken,
+      targetMode: savedTargetMode,
+      periodWeeks: savedPeriodWeeks,
       agpPeriodMode: 'full',
       selectedDate: null,
       dataStartDate: null,
@@ -499,7 +517,7 @@
 
     const chartInstances = {};
 
-    // --- STREAMING_CHUNK:Utility Functions ---
+    // --- Utility Functions ---
     const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
 
@@ -542,7 +560,7 @@
       return Number.isFinite(ms) ? ms : 0;
     }
 
-    // --- STREAMING_CHUNK:Insulin & Treatment Logic ---
+    // --- Insulin & Treatment Logic ---
     function isLikelyCB(t) {
       const insulin = Number(t.insulin || 0);
       if (!Number.isFinite(insulin) || insulin <= 0) return false;
@@ -615,7 +633,7 @@
       return total;
     }
 
-    // --- STREAMING_CHUNK:Statistical Calculations ---
+    // --- Statistical Calculations ---
     function calcStatsForPeriod(startDate, endDate) {
       const startMs = startDate.getTime();
       const endMs = endDate.getTime();
@@ -709,7 +727,7 @@
         safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
       } else {
         safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
-        safeSetStyle(`${prefix}-cb-bar', 'width', '0%');
+        safeSetStyle(`${prefix}-cb-bar`, 'width', '0%');
         safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
       }
     }
@@ -739,10 +757,18 @@
       renderStats('pw', calcStatsForPeriod(periodStart, baseEnd), periodDays);
     }
 
-    // --- STREAMING_CHUNK:Data Fetching ---
+    // --- Data Fetching (スマホ・Safari用例外検証ロジック補強) ---
     async function fetchData() {
       const urlBase = state.url.trim().replace(/\/$/, '');
-      if(!urlBase) return;
+      if(!urlBase) {
+        alert("Nightscout URL is empty.");
+        return;
+      }
+      
+      // Mixed Contentの警告判定
+      if (window.location.protocol === 'https:' && urlBase.startsWith('http:')) {
+         alert("【セキュリティエラーの可能性】\nこの画面はHTTPS接続ですが、Nightscoutの入力がHTTP（暗号化なし）になっています。スマホブラウザによって通信が自動ブロックされるため、Nightscout側を https:// に変更してください。");
+      }
       
       showLoading();
       
@@ -763,10 +789,19 @@
         let profilePath = `${urlBase}/api/v1/profile.json`;
         if (state.token) profilePath += `?token=${encodeURIComponent(state.token)}`;
         
+        // スマホでのFetchタイムアウト・エラーハンドリングの視認化
+        const fetchWithCheck = async (url) => {
+           const res = await fetch(url, { headers: { Accept: 'application/json' }}).catch(e => {
+              throw new Error("Network request failed. Browser blocked the connection or Server is down. (" + e.message + ")");
+           });
+           if (!res.ok) throw new Error("Server responded with status: " + res.status);
+           return res.json();
+        };
+
         const [rawEntries, rawTreats, profiles] = await Promise.all([
-           fetch(buildQs('/api/v1/entries.json', 'dateString'), { headers: { Accept: 'application/json' }}).then(r => r.json()),
-           fetch(buildQs('/api/v1/treatments.json', 'created_at'), { headers: { Accept: 'application/json' }}).then(r => r.json()),
-           fetch(profilePath, { headers: { Accept: 'application/json' }}).then(r => r.json())
+           fetchWithCheck(buildQs('/api/v1/entries.json', 'dateString')),
+           fetchWithCheck(buildQs('/api/v1/treatments.json', 'created_at')),
+           fetchWithCheck(profilePath)
         ]);
         
         state.entries = rawEntries.map(d => ({
@@ -792,12 +827,12 @@
       } catch (err) {
         console.error(err);
         hideLoading();
-        alert("Failed to fetch data from Nightscout. Please verify your URL and Token.");
+        alert("【Fetch Failed / 取得失敗】\n" + err.message + "\n\nURLとトークンが正しいか、NightscoutがCORSリクエストを許可しているか確認してください。");
         showModal(true);
       }
     }
 
-    // --- STREAMING_CHUNK:Chart Rendering ---
+    // --- Chart Rendering ---
     Chart.defaults.color = '#94a3b8';
     Chart.defaults.font.family = 'Inter, sans-serif';
 
@@ -836,7 +871,9 @@
     }
 
     function renderCGMChart(canvasId, entries, timeStart, timeEnd) {
-      const ctx = document.getElementById(canvasId).getContext('2d');
+      const canvasEl = document.getElementById(canvasId);
+      if(!canvasEl) return;
+      const ctx = canvasEl.getContext('2d');
       const dataPoints = entries.map(e => ({ x: e.date, y: e.sgv }));
       const maxDataY = dataPoints.length ? Math.max(...dataPoints.map(d=>d.y)) : 180;
       
@@ -909,7 +946,9 @@
     }
 
     function renderAGPChart(canvasId, entries) {
-      const ctx = document.getElementById(canvasId).getContext('2d');
+      const canvasEl = document.getElementById(canvasId);
+      if(!canvasEl) return;
+      const ctx = canvasEl.getContext('2d');
       const agpData = buildAgpData(entries);
       
       if (chartInstances[canvasId]) chartInstances[canvasId].destroy();
@@ -950,7 +989,7 @@
       });
     }
 
-    // --- STREAMING_CHUNK:Dashboard Updaters ---
+    // --- Dashboard Updaters ---
     function updateTL() {
       const start = state.selectedDate;
       const end = start + 86400000 - 1;
@@ -1066,15 +1105,15 @@
          const contFull = document.getElementById(`${prefix}-container-full`);
          
          if(is1w) {
-            head1w.classList.remove('hidden'); head1w.classList.add('flex');
-            cont1w.classList.remove('hidden');
-            headFull.classList.add('hidden'); headFull.classList.remove('flex');
-            contFull.classList.add('hidden');
+            if(head1w) { head1w.classList.remove('hidden'); head1w.classList.add('flex'); }
+            if(cont1w) cont1w.classList.remove('hidden');
+            if(headFull) { headFull.classList.add('hidden'); headFull.classList.remove('flex'); }
+            if(contFull) contFull.classList.add('hidden');
          } else {
-            headFull.classList.remove('hidden'); headFull.classList.add('flex');
-            contFull.classList.remove('hidden');
-            head1w.classList.add('hidden'); head1w.classList.remove('flex');
-            cont1w.classList.add('hidden');
+            if(headFull) { headFull.classList.remove('hidden'); headFull.classList.add('flex'); }
+            if(contFull) contFull.classList.remove('hidden');
+            if(head1w) { head1w.classList.add('hidden'); head1w.classList.remove('flex'); }
+            if(cont1w) cont1w.classList.add('hidden');
          }
       };
       
@@ -1105,7 +1144,7 @@
       updateNavControls();
     }
 
-    // --- STREAMING_CHUNK:Initialization & Events ---
+    // --- Initialization & Events ---
     function updateTargetToggleUI() {
       const label = document.getElementById('header-target-label');
       if (label) label.textContent = state.targetMode.toUpperCase();
@@ -1145,10 +1184,14 @@
       state.targetMode = newTargetMode;
       state.periodWeeks = newPeriodWeeks;
       
-      localStorage.setItem('ns_url', state.url);
-      localStorage.setItem('ns_token', state.token);
-      localStorage.setItem('ns_targetMode', state.targetMode);
-      localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+      try {
+        localStorage.setItem('ns_url', state.url);
+        localStorage.setItem('ns_token', state.token);
+        localStorage.setItem('ns_targetMode', state.targetMode);
+        localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+      } catch(e) {
+        console.warn("Could not save settings to localStorage.");
+      }
       
       document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
       document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
@@ -1157,7 +1200,7 @@
       updatePeriodToggleUI();
       hideModal();
 
-      if (requiresFetch) {
+      if (requiresFetch || state.entries.length === 0) {
         fetchData();
       } else {
         if (state.entries.length > 0) {
@@ -1168,7 +1211,7 @@
 
     document.getElementById('btn-toggle-target').addEventListener('click', () => {
        state.targetMode = state.targetMode === 'tir' ? 'titr' : 'tir';
-       localStorage.setItem('ns_targetMode', state.targetMode);
+       try { localStorage.setItem('ns_targetMode', state.targetMode); } catch(e){}
        updateTargetToggleUI();
        if (state.entries.length > 0) {
           updateAllDashboards();
@@ -1181,7 +1224,7 @@
         if (state.periodWeeks === newWeeks) return;
         
         state.periodWeeks = newWeeks;
-        localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+        try { localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString()); } catch(e){}
         
         document.getElementById('bl-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
         document.getElementById('br-period-badge-full').textContent = `${state.periodWeeks} Weeks`;
