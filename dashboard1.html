@@ -415,7 +415,7 @@
     // 全ての処理を DOMContentLoaded 後に安全に実行
     window.addEventListener('DOMContentLoaded', function() {
       
-     // --- Clinical A1c Calculator (高血糖域ブースト・指数減衰最適化版) ---
+    // --- Clinical A1c Calculator (高血糖ブースト＋低血糖時間除外・最適化版) ---
       var ClinicalA1cCalculator = function() {};
       ClinicalA1cCalculator.prototype.analyze = function(glucoseData) {
         var validData = glucoseData.filter(function(d) {
@@ -427,8 +427,13 @@
         if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
 
         var latestMs = validData[validData.length - 1].date;
-        var sumWeight = 0;
+        
+        // 通常のGMI用（低血糖も含める）
+        var sumBaseWeight = 0;
         var sumWeightedSgv = 0;
+        
+        // ADJ用（低血糖時間を適切に除外・処理するための分離）
+        var sumEffWeight = 0;
         var sumWeightedEffSgv = 0;
 
         for (var i = 0; i < validData.length; i++) {
@@ -451,41 +456,53 @@
           
           var finalWeight = durationMs * rbcWeight;
 
-          sumWeight += finalWeight;
+          // 通常GMI用の累積
+          sumBaseWeight += finalWeight;
           sumWeightedSgv += v * finalWeight;
 
-          // 3. 【パラメータチューニング】高血糖域の寄与分を強力にブースト
-          var vEff = v;
+          // 3. 【ロジック修正】70未満（低血糖）の時間はADJの集計（重み）から完全に除外
           if (v < 70) {
-            vEff = 70; // 低血糖クリップ
-          } else if (v >= 70 && v < 100) {
-            vEff = v;
-          } else if (v >= 100 && v < 140) {
-            vEff = v * 1.01;
-          } else if (v >= 140 && v < 180) {
-            vEff = v * 1.09; // 糖化速度の立ち上がりを強化 (旧1.04)
-          } else if (v >= 180 && v < 240) {
-            vEff = v * 1.18; // スパイクの強い寄与を反映 (旧1.08)
-          } else if (v >= 240 && v < 300) {
-            vEff = v * 1.28; // 高血糖維持時の強い糖化を反映 (旧1.12)
-          } else if (v >= 300) {
-            vEff = v * 1.38; // 極端な高血糖の超加速を反映 (旧1.16)
+            // 70未満の時は糖化が進行しないため、ADJ用の重みを0にして分子・分母への寄与を断つ
+            var effWeight = 0; 
+            var vEff = 0;
+          } else {
+            var effWeight = finalWeight;
+            var vEff = v;
+            
+            // 高血糖域のブースト処理
+            if (v >= 100 && v < 140) {
+              vEff = v * 1.01;
+            } else if (v >= 140 && v < 180) {
+              vEff = v * 1.09;
+            } else if (v >= 180 && v < 240) {
+              vEff = v * 1.18;
+            } else if (v >= 240 && v < 300) {
+              vEff = v * 1.28;
+            } else if (v >= 300) {
+              vEff = v * 1.38;
+            }
           }
 
-          sumWeightedEffSgv += vEff * finalWeight;
+          sumEffWeight += effWeight;
+          sumWeightedEffSgv += vEff * effWeight;
         }
 
-        if (sumWeight === 0) return { adjustedGmi: 0, gmi: 0 };
+        if (sumBaseWeight === 0) return { adjustedGmi: 0, gmi: 0 };
 
-        var weightedMean = sumWeightedSgv / sumWeight;
-        var effWeightedMean = sumWeightedEffSgv / sumWeight;
-
+        // 純粋な時間加重平均からベースGMIを算出
+        var weightedMean = sumWeightedSgv / sumBaseWeight;
         var gmi = 3.31 + 0.02392 * weightedMean;
-        var adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
+        
+        // 低血糖時間を除外した集計から実効加重平均（ADJ用）を算出
+        var adjustedGmi = gmi; // フォールバック
+        if (sumEffWeight > 0) {
+          var effWeightedMean = sumWeightedEffSgv / sumEffWeight;
+          adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
+        }
         
         return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
       };
-
+      
       var a1cCalculator = new ClinicalA1cCalculator();
 
       // --- State Management ---
