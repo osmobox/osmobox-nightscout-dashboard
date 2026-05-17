@@ -40,13 +40,13 @@
     }
     .summary-grid {
       display: grid;
-      /* 項目名を少し広くして1行に収めるための調整 */
-      grid-template-columns: 86px repeat(4, minmax(0, 1fr));
+      grid-template-columns: 86px repeat(4, minmax(64px, 1fr));
       gap: 4px;
+      min-width: 350px; /* モバイルでの潰れすぎ防止 */
     }
     @media (max-width: 768px) {
       .summary-grid {
-        grid-template-columns: 78px repeat(4, minmax(0, 1fr));
+        grid-template-columns: 78px repeat(4, minmax(58px, 1fr));
       }
     }
     /* Loading Spinner */
@@ -86,21 +86,21 @@
   
   <main class="flex-1 flex flex-col gap-3 p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
     
-    <div class="panel flex-none lg:flex-[0.8] flex flex-col min-h-[400px] lg:min-h-0 p-3 relative" id="summary-panel">
+    <div class="panel flex-none lg:flex-[0.8] flex flex-col min-h-[500px] md:min-h-[400px] lg:min-h-0 p-3 relative" id="summary-panel">
       <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 flex-none pl-1 border-b border-slate-700 pb-2">
         <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Statistical Summary
       </h2>
 
-      <!-- TIRカラムの幅を広げました -->
-      <div class="flex-1 grid grid-cols-[120px_1fr] sm:grid-cols-[170px_1fr] gap-3 min-h-0 overflow-y-auto pr-1">
+      <!-- スマホでは縦並び(grid-cols-1)、md以上で横並び(md:grid-cols-[140px_1fr]等)に変形 -->
+      <div class="flex-1 grid grid-cols-1 md:grid-cols-[140px_1fr] lg:grid-cols-[170px_1fr] gap-3 min-h-0 overflow-y-auto pr-1">
         
         <!-- Left Column: TIR Bars -->
-        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2 flex flex-col min-h-0 shadow-inner">
+        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2 flex flex-col min-h-[140px] md:min-h-0 shadow-inner flex-none md:flex-1">
           <div id="label-tir" class="text-[12px] font-black text-green-400 tracking-widest text-center leading-none mt-1 mb-2">TIR</div>
           <div class="grid grid-cols-4 text-center text-[10px] font-black text-slate-300 mb-2 gap-1 flex-none">
             <span>TD</span><span>YD</span><span>7D</span><span id="summary-period-label" class="text-blue-300">4W</span>
           </div>
-          <div class="flex-1 grid grid-cols-4 gap-1 items-end min-h-[60px] px-1 pb-1">
+          <div class="flex-1 grid grid-cols-4 gap-1 items-end min-h-[50px] px-1 pb-1">
             <!-- Today -->
             <div class="flex flex-col items-center h-full min-h-0">
               <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
@@ -149,8 +149,8 @@
           </div>
         </div>
 
-        <!-- Right Column: Detail Stats -->
-        <div class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 sm:px-3 py-2 min-h-0 gap-2 overflow-y-auto">
+        <!-- Right Column: Detail Stats (はみ出し時に横スクロール可能なコンテナ化) -->
+        <div class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 sm:px-3 py-2 min-h-0 gap-2 overflow-x-auto overflow-y-hidden select-text">
           <div class="grid summary-grid items-end border-b border-slate-600/50 pb-1 flex-none">
             <div></div>
             <div class="text-center text-[10px] sm:text-[12px] font-black text-white tracking-widest leading-none">Today</div>
@@ -161,29 +161,29 @@
 
           <!-- AVG BG -->
           <div class="grid summary-grid items-center flex-none">
-            <div class="text-[10px] sm:text-[12px] text-slate-300 font-bold uppercase pl-1">AVG BG</div>
-            <div class="text-center font-black text-white text-sm sm:text-lg leading-none"><span id="td-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="td-cv">--</span>%</span></div>
-            <div class="text-center font-bold text-slate-300 text-sm sm:text-lg leading-none"><span id="yd-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="yd-cv">--</span>%</span></div>
-            <div class="text-center font-bold text-slate-400 text-sm sm:text-lg leading-none"><span id="7d-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="7d-cv">--</span>%</span></div>
-            <div class="text-center font-bold text-slate-500 text-sm sm:text-lg leading-none"><span id="pw-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="pw-cv">--</span>%</span></div>
+            <div class="text-[10px] sm:text-[12px] text-slate-300 font-bold uppercase pl-1 break-words">AVG BG</div>
+            <div class="text-center font-black text-white text-sm sm:text-lg leading-none break-all"><span id="td-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="td-cv">--</span>%</span></div>
+            <div class="text-center font-bold text-slate-300 text-sm sm:text-lg leading-none break-all"><span id="yd-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="yd-cv">--</span>%</span></div>
+            <div class="text-center font-bold text-slate-400 text-sm sm:text-lg leading-none break-all"><span id="7d-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="7d-cv">--</span>%</span></div>
+            <div class="text-center font-bold text-slate-500 text-sm sm:text-lg leading-none break-all"><span id="pw-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="pw-cv">--</span>%</span></div>
           </div>
 
           <!-- GMI -->
           <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 flex-none">
-            <div class="text-[10px] sm:text-[12px] text-pink-400 font-bold uppercase pl-1">GMI/Adj</div>
-            <div class="text-center font-black text-pink-300 text-xs sm:text-sm leading-none"><span id="td-gmi">0.0</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="td-ea1c">0.0</span></div>
-            <div class="text-center font-bold text-pink-400 text-xs sm:text-sm leading-none"><span id="yd-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="yd-ea1c">0.0</span></div>
-            <div class="text-center font-bold text-pink-500 text-xs sm:text-sm leading-none"><span id="7d-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="7d-ea1c">0.0</span></div>
-            <div class="text-center font-bold text-pink-600 text-xs sm:text-sm leading-none"><span id="pw-gmi">0.0</span><span class="text-[9px] text-slate-700 mx-0.5">/</span><span id="pw-ea1c">0.0</span></div>
+            <div class="text-[10px] sm:text-[12px] text-pink-400 font-bold uppercase pl-1 break-words">GMI/Adj</div>
+            <div class="text-center font-black text-pink-300 text-xs sm:text-sm leading-none break-all"><span id="td-gmi">0.0</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="td-ea1c">0.0</span></div>
+            <div class="text-center font-bold text-pink-400 text-xs sm:text-sm leading-none break-all"><span id="yd-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="yd-ea1c">0.0</span></div>
+            <div class="text-center font-bold text-pink-500 text-xs sm:text-sm leading-none break-all"><span id="7d-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="7d-ea1c">0.0</span></div>
+            <div class="text-center font-bold text-pink-600 text-xs sm:text-sm leading-none break-all"><span id="pw-gmi">0.0</span><span class="text-[9px] text-slate-700 mx-0.5">/</span><span id="pw-ea1c">0.0</span></div>
           </div>
 
           <!-- TDD -->
           <div class="grid summary-grid items-center bg-blue-900/20 rounded py-1.5 border border-blue-800/30 mt-1 flex-none">
-            <div class="text-[10px] sm:text-[12px] text-blue-400 font-bold uppercase pl-1">TDD</div>
-            <div class="text-center font-black text-blue-200 text-sm sm:text-base leading-none"><span id="td-tdd">0.0</span><span class="text-[9px] text-blue-400 ml-0.5">U</span></div>
-            <div class="text-center font-bold text-blue-300 text-sm sm:text-base leading-none"><span id="yd-tdd">0.0</span></div>
-            <div class="text-center font-bold text-blue-400 text-sm sm:text-base leading-none"><span id="7d-tdd">0.0</span></div>
-            <div class="text-center font-bold text-blue-500 text-sm sm:text-base leading-none"><span id="pw-tdd">0.0</span></div>
+            <div class="text-[10px] sm:text-[12px] text-blue-400 font-bold uppercase pl-1 break-words">TDD</div>
+            <div class="text-center font-black text-blue-200 text-sm sm:text-base leading-none break-all"><span id="td-tdd">0.0</span><span class="text-[9px] text-blue-400 ml-0.5">U</span></div>
+            <div class="text-center font-bold text-blue-300 text-sm sm:text-base leading-none break-all"><span id="yd-tdd">0.0</span></div>
+            <div class="text-center font-bold text-blue-400 text-sm sm:text-base leading-none break-all"><span id="7d-tdd">0.0</span></div>
+            <div class="text-center font-bold text-blue-500 text-sm sm:text-base leading-none break-all"><span id="pw-tdd">0.0</span></div>
           </div>
 
           <!-- Insulin Bars -->
@@ -197,29 +197,29 @@
 
           <!-- Insulin Values: Single Line -->
           <div class="grid summary-grid items-center text-[9px] sm:text-[10px] leading-none text-center flex-none">
-            <div class="text-left text-slate-400 font-bold whitespace-nowrap tracking-tight pl-1">Basal/CB/Bolus</div>
-            <div class="whitespace-nowrap tracking-tighter"><span id="td-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-300" id="td-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-300" id="td-bolus">0.0</span></div>
-            <div class="whitespace-nowrap tracking-tighter"><span id="yd-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-400" id="yd-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-400" id="yd-bolus">0.0</span></div>
-            <div class="whitespace-nowrap tracking-tighter"><span id="7d-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-500" id="7d-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-500" id="7d-bolus">0.0</span></div>
-            <div class="whitespace-nowrap tracking-tighter"><span id="pw-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-600" id="pw-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-600" id="pw-bolus">0.0</span></div>
+            <div class="text-left text-slate-400 font-bold tracking-tight pl-1 break-words">Basal/CB/Bolus</div>
+            <div class="tracking-tighter break-all"><span id="td-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-300" id="td-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-300" id="td-bolus">0.0</span></div>
+            <div class="tracking-tighter break-all"><span id="yd-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-400" id="yd-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-400" id="yd-bolus">0.0</span></div>
+            <div class="tracking-tighter break-all"><span id="7d-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-500" id="7d-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-500" id="7d-bolus">0.0</span></div>
+            <div class="tracking-tighter break-all"><span id="pw-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-600" id="pw-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-600" id="pw-bolus">0.0</span></div>
           </div>
 
           <!-- CARBS -->
           <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 mt-1 flex-none">
-            <div class="text-[10px] sm:text-[12px] text-yellow-400 font-bold uppercase pl-1">CARBS</div>
-            <div class="text-center font-black text-yellow-300 text-sm sm:text-base leading-none"><span id="td-carbs">0</span><span class="text-[9px] text-yellow-500 ml-0.5">g</span></div>
-            <div class="text-center font-bold text-yellow-400 text-sm sm:text-base leading-none"><span id="yd-carbs">0</span></div>
-            <div class="text-center font-bold text-yellow-500 text-sm sm:text-base leading-none"><span id="7d-carbs">0</span></div>
-            <div class="text-center font-bold text-yellow-600 text-sm sm:text-base leading-none"><span id="pw-carbs">0</span></div>
+            <div class="text-[10px] sm:text-[12px] text-yellow-400 font-bold uppercase pl-1 break-words">CARBS</div>
+            <div class="text-center font-black text-yellow-300 text-sm sm:text-base leading-none break-all"><span id="td-carbs">0</span><span class="text-[9px] text-yellow-500 ml-0.5">g</span></div>
+            <div class="text-center font-bold text-yellow-400 text-sm sm:text-base leading-none break-all"><span id="yd-carbs">0</span></div>
+            <div class="text-center font-bold text-yellow-500 text-sm sm:text-base leading-none break-all"><span id="7d-carbs">0</span></div>
+            <div class="text-center font-bold text-yellow-600 text-sm sm:text-base leading-none break-all"><span id="pw-carbs">0</span></div>
           </div>
 
           <!-- CR -->
           <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 flex-none mb-2">
-            <div class="flex flex-col leading-none pl-1"><span class="text-[10px] sm:text-[12px] text-orange-400 font-bold uppercase">EST. CR</span><span class="text-[8px] sm:text-[9px] text-orange-500/70 mt-0.5 font-medium">Bolus/Total</span></div>
-            <div class="text-center font-black text-orange-200 text-xs sm:text-sm leading-none"><span id="td-cr-bolus">0.0</span><span class="text-slate-500 text-[9px] mx-0.5">/</span><span id="td-cr-total">0.0</span></div>
-            <div class="text-center font-bold text-orange-300 text-xs sm:text-sm leading-none"><span id="yd-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="yd-cr-total">0.0</span></div>
-            <div class="text-center font-bold text-orange-500 text-xs sm:text-sm leading-none"><span id="7d-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="7d-cr-total">0.0</span></div>
-            <div class="text-center font-bold text-orange-600 text-xs sm:text-sm leading-none"><span id="pw-cr-bolus">0.0</span><span class="text-slate-700 text-[9px] mx-0.5">/</span><span id="pw-cr-total">0.0</span></div>
+            <div class="flex flex-col leading-none pl-1 break-words"><span class="text-[10px] sm:text-[12px] text-orange-400 font-bold uppercase">EST. CR</span><span class="text-[8px] sm:text-[9px] text-orange-500/70 mt-0.5 font-medium">Bolus/Total</span></div>
+            <div class="text-center font-black text-orange-200 text-xs sm:text-sm leading-none break-all"><span id="td-cr-bolus">0.0</span><span class="text-slate-500 text-[9px] mx-0.5">/</span><span id="td-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-300 text-xs sm:text-sm leading-none break-all"><span id="yd-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="yd-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-500 text-xs sm:text-sm leading-none break-all"><span id="7d-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="7d-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-600 text-xs sm:text-sm leading-none break-all"><span id="pw-cr-bolus">0.0</span><span class="text-slate-700 text-[9px] mx-0.5">/</span><span id="pw-cr-total">0.0</span></div>
           </div>
         </div>
       </div>
@@ -404,7 +404,7 @@
      <div class="loader mb-6"></div>
      <div class="text-white text-lg font-black tracking-widest uppercase mb-2">Fetching Data</div>
      <div class="text-slate-400 text-sm font-bold text-center px-4 max-w-sm">
-       Downloading up to 12 weeks of historical data.<br>This may take a few moments.
+        Downloading up to 12 weeks of historical data.<br>This may take a few moments.
      </div>
   </div>
 
@@ -413,9 +413,7 @@
 
     // --- Clinical A1c Calculator ---
     class ClinicalA1cCalculator {
-      constructor(config = {}) {
-        // 設定は保持しますが、一律の閾値ではなく階層型糖化モデルを使用します
-      }
+      constructor(config = {}) {}
       
       analyze(glucoseData) {
         const validData = glucoseData.filter(d => {
@@ -425,54 +423,47 @@
 
         if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
 
-        // 基準日をデータ内の最新日時とする
         const latestMs = validData[validData.length - 1].date;
         
         let sumWeight = 0;
-        let sumWeightedSgv = 0;       // 通常のGMI用（純粋な加重平均）
-        let sumWeightedEffSgv = 0;    // ADJ用（階層的糖化モデルを適用した実効血糖値の加重平均）
+        let sumWeightedSgv = 0;
+        let sumWeightedEffSgv = 0;
 
         for (let i = 0; i < validData.length; i++) {
           const d = validData[i];
           const v = Number(d.sgv ?? d.glucose ?? d.value);
           
-          // 1. 暴露時間（AUC）の計算: 前のデータポイントとの時間差
           let durationMs = 5 * 60 * 1000;
           if (i > 0) {
              const prev = validData[i - 1];
              durationMs = d.date - prev.date;
-             // 欠損が長すぎる場合、最大15分までの暴露として打ち切る
              if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
              if (durationMs < 0) durationMs = 5 * 60 * 1000;
           }
 
-          // 2. 赤血球寿命(約120日)に基づく線形減衰ウェイト（直近ほど重い）
           const ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
           const rbcWeight = Math.max(0, 1 - (ageDays / 120));
           
-          // 時間積分（暴露時間） × 赤血球寿命モデル加重
           const finalWeight = durationMs * rbcWeight;
 
           sumWeight += finalWeight;
           sumWeightedSgv += v * finalWeight;
 
-          // 3. 階層的糖化モデルによる「実効血糖値」の計算
           let vEff = v;
           if (v < 70) {
-            // 【重要】低血糖はHbA1cを下げない（一度糖化したものは戻らないため70でクリップ）
             vEff = 70;
           } else if (v >= 70 && v < 100) {
             vEff = v;
           } else if (v >= 100 && v < 140) {
-            vEff = v * 1.01; // 軽度の上昇によるわずかな糖化亢進
+            vEff = v * 1.01;
           } else if (v >= 140 && v < 180) {
-            vEff = v * 1.04; // 糖化の加速
+            vEff = v * 1.04;
           } else if (v >= 180 && v < 240) {
-            vEff = v * 1.08; // 強い糖化
+            vEff = v * 1.08;
           } else if (v >= 240 && v < 300) {
-            vEff = v * 1.12; // 非常に強い糖化
+            vEff = v * 1.12;
           } else if (v >= 300) {
-            vEff = v * 1.16; // 極端な高血糖による急激な糖化
+            vEff = v * 1.16;
           }
 
           sumWeightedEffSgv += vEff * finalWeight;
@@ -483,10 +474,7 @@
         const weightedMean = sumWeightedSgv / sumWeight;
         const effWeightedMean = sumWeightedEffSgv / sumWeight;
 
-        // 加重平均(暴露時間×赤血球寿命)によるベースGMI
         const gmi = 3.31 + 0.02392 * weightedMean;
-        
-        // 階層的糖化モデル・低血糖クリップを適用した推定ADJ (より実際のHbA1cに近い推定値)
         const adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
         
         return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
@@ -500,13 +488,10 @@
       token: localStorage.getItem('ns_token') || '',
       targetMode: localStorage.getItem('ns_targetMode') || 'tir',
       periodWeeks: parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10),
-      
-      agpPeriodMode: 'full', // '1w' or 'full'
-      selectedDate: null,    // Timestamp for 0:00 of selected day
-      
+      agpPeriodMode: 'full',
+      selectedDate: null,
       dataStartDate: null,
       dataEndDate: null,
-      
       entries: [],         
       treatments: [],      
       profile: null        
@@ -562,12 +547,9 @@
       const insulin = Number(t.insulin || 0);
       if (!Number.isFinite(insulin) || insulin <= 0) return false;
       
-      // Loopの場合: automaticフラグがあればそれを最優先で判定
-      // true: 自動補正ボーラス(CB), false: 手動ボーラス(Bolus)
       if (t.automatic === true) return true;
       if (t.automatic === false) return false;
       
-      // automaticフラグが存在しないデータ用へのフォールバック
       const type = (t.eventType || '').toLowerCase();
       const carbs = Number(t.carbs || 0);
       
@@ -602,7 +584,6 @@
       const endMs = Math.min(endDate.getTime(), Date.now());
       if (startMs >= endMs) return 0;
 
-      // Temp Basalの探索を最適化（O(N^2)の計算爆発によるフリーズを完全に回避）
       const tempBasals = periodTreats
         .filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null)
         .map(t => {
@@ -617,13 +598,11 @@
       let tbIndex = 0;
 
       while (currentMs < endMs) {
-        // 現在時刻を過ぎて終了したTempBasalのインデックスを進める
         while (tbIndex < tempBasals.length && tempBasals[tbIndex].end <= currentMs) {
           tbIndex++;
         }
 
         let rate;
-        // 現在時刻がTempBasalの期間内であれば適用、そうでなければプロファイルを適用
         if (tbIndex < tempBasals.length && tempBasals[tbIndex].start <= currentMs) {
           rate = tempBasals[tbIndex].rate;
         } else {
@@ -631,7 +610,7 @@
         }
 
         total += rate / 60;
-        currentMs += 60000; // 1分進める
+        currentMs += 60000;
       }
       return total;
     }
@@ -658,7 +637,6 @@
         tar = values.filter(v => v > targetMax).length / total * 100;
         tar250 = values.filter(v => v > 250).length / total * 100;
         
-        // Dynamic scoring based on mode
         tirScore = tir - (5 * tbr54) - (2 * tbr70) - (1 * tar250);
         if (state.targetMode === 'titr') {
            const pH = values.filter(v => v > 140 && v <= 250).length / total * 100;
@@ -704,7 +682,6 @@
       safeSetStyle(`${prefix}-tar`, 'height', `${Math.min(100, Math.max(0, stats.tar))}%`);
       
       safeSetText(`${prefix}-tir-val`, `${Math.round(stats.tir)}%`);
-      // 整数で表示するようMath.roundを使用
       safeSetText(`${prefix}-tir-score`, Math.round(stats.tirScore).toString());
       
       const tdd = stats.tdd / days;
@@ -732,19 +709,17 @@
         safeSetStyle(`${prefix}-bolus-bar`, 'width', `${bolus / tdd * 100}%`);
       } else {
         safeSetStyle(`${prefix}-basal-bar`, 'width', '0%');
-        safeSetStyle(`${prefix}-cb-bar`, 'width', '0%');
+        safeSetStyle(`${prefix}-cb-bar', 'width', '0%');
         safeSetStyle(`${prefix}-bolus-bar`, 'width', '0%');
       }
     }
 
     function calculateSummaries() {
-      // Dynamic Target mode Labels
       const targetLabel = state.targetMode === 'titr' ? 'TITR' : 'TIR';
       safeSetText('label-tir', targetLabel);
       safeSetText('label-tir-score', `${targetLabel} SCORE`);
 
       const baseEnd = new Date(state.dataEndDate);
-      // Midnight today
       const todayStart = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0);
       
       const yesterdayStart = new Date(todayStart.getTime() - 86400000);
@@ -755,11 +730,9 @@
       const periodDays = state.periodWeeks * 7;
       const periodStart = new Date(todayStart.getTime() - ((periodDays - 1) * 86400000));
 
-      // Update UI labels
       safeSetText('summary-period-label', `${state.periodWeeks}W`);
       safeSetText('summary-period-title', `${periodDays} Days`);
 
-      // 'days' divisor is 1 for 'Today' to show the absolute daily accumulation so far. 
       renderStats('td', calcStatsForPeriod(todayStart, baseEnd), 1);
       renderStats('yd', calcStatsForPeriod(yesterdayStart, yesterdayEnd), 1);
       renderStats('7d', calcStatsForPeriod(sevenDaysStart, baseEnd), 7);
@@ -774,10 +747,8 @@
       showLoading();
       
       const now = new Date();
-      // Set end to the very end of today
       const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
       
-      // 最大選択可能な期間(12週)のさらに2倍(Previous用)のデータを一括で取得する
       const MAX_PERIOD_WEEKS = 12;
       const totalDaysToFetch = MAX_PERIOD_WEEKS * 7 * 2;
       const startDate = new Date(endDate.getTime() - totalDaysToFetch * 86400000 + 1);
@@ -792,23 +763,19 @@
         let profilePath = `${urlBase}/api/v1/profile.json`;
         if (state.token) profilePath += `?token=${encodeURIComponent(state.token)}`;
         
-        // *Crucial Fix*: Use 'created_at' for treatments API endpoint
         const [rawEntries, rawTreats, profiles] = await Promise.all([
            fetch(buildQs('/api/v1/entries.json', 'dateString'), { headers: { Accept: 'application/json' }}).then(r => r.json()),
            fetch(buildQs('/api/v1/treatments.json', 'created_at'), { headers: { Accept: 'application/json' }}).then(r => r.json()),
            fetch(profilePath, { headers: { Accept: 'application/json' }}).then(r => r.json())
         ]);
         
-        // Map and clean entries
         state.entries = rawEntries.map(d => ({
            date: new Date(d.dateString || d.date).getTime(),
            sgv: Number(d.sgv ?? d.glucose ?? d.value)
         })).filter(d => Number.isFinite(d.sgv) && d.sgv > 0).sort((a,b) => a.date - b.date);
         
-        // Save treatments
         state.treatments = Array.isArray(rawTreats) ? rawTreats : [];
         
-        // Extract default profile
         if (Array.isArray(profiles) && profiles.length > 0) {
            const defaultName = profiles[0].defaultProfile;
            state.profile = profiles[0].store?.[defaultName] || null;
@@ -817,7 +784,6 @@
         state.dataEndDate = endDate.getTime();
         state.dataStartDate = startDate.getTime();
         
-        // Reset selected date to today (0:00 of latest date)
         state.selectedDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0, 0).getTime();
         
         hideLoading();
@@ -849,12 +815,11 @@
     function getDotColor(ctx) {
       const y = ctx.raw?.y;
       const yMax = state.targetMode === 'titr' ? 140 : 180;
-      if (y < 70) return '#f87171'; // Red
-      if (y > yMax) return '#facc15'; // Yellow
-      return '#4ade80'; // Green
+      if (y < 70) return '#f87171';
+      if (y > yMax) return '#facc15';
+      return '#4ade80';
     }
 
-    // Y軸にターゲット値(70と180等)を強制挿入するヘルパー
     function addTargetTicks(axis) {
        const yMax = state.targetMode === 'titr' ? 140 : 180;
        if (!axis.ticks.find(t => t.value === 70)) axis.ticks.push({ value: 70 });
@@ -924,7 +889,7 @@
       for (let i = 0; i <= 48; i++) {
         const idx = i === 48 ? 0 : i;
         const data = [...slots[idx]].sort((a, b) => a - b);
-        p.times.push(i * 0.5); // 0.0 to 24.0
+        p.times.push(i * 0.5);
         
         if (!data.length) { 
           p.p10.push(null); p.p25.push(null); p.p50.push(null); p.p75.push(null); p.p90.push(null); 
@@ -992,7 +957,6 @@
       
       const stats = calcStatsForPeriod(new Date(start), new Date(end));
       document.getElementById('tl-date').textContent = formatShortDate(start);
-      // Math.roundを使用
       document.getElementById('tl-score').textContent = Math.round(stats.tirScore).toString();
       
       const dayEntries = state.entries.filter(e => e.date >= start && e.date <= end);
@@ -1011,13 +975,13 @@
       const todayMs = new Date(searchEnd.getFullYear(), searchEnd.getMonth(), searchEnd.getDate(), 0, 0, 0, 0).getTime();
       
       for(let ms = searchStart.getTime(); ms <= searchEnd.getTime(); ms += 86400000) {
-         if (ms === todayMs) continue; // Exclude today from Best Day search
+         if (ms === todayMs) continue;
 
          const dayEnd = ms + 86400000 - 1;
          const stats = calcStatsForPeriod(new Date(ms), new Date(dayEnd));
          const dayEntries = state.entries.filter(e => e.date >= ms && e.date <= dayEnd);
          
-         if(dayEntries.length < 144) continue; // Skip incomplete days
+         if(dayEntries.length < 144) continue;
          
          if(stats.tirScore > bestScore) {
             bestScore = stats.tirScore;
@@ -1040,13 +1004,11 @@
       }
       
       document.getElementById('tr-date').textContent = formatShortDate(best.date);
-      // Math.roundを使用
       document.getElementById('tr-score').textContent = Math.round(best.score).toString();
       renderCGMChart('tr-chart', best.entries, best.date, best.date + 86400000 - 1);
     }
 
     function getAgpPeriodInfo(isCurrent, is1w) {
-      // 常に最新の日付（state.dataEndDateを含む日の終わり）を基準に固定する
       const baseEndObj = new Date(state.dataEndDate);
       const latestDayEndMs = new Date(baseEndObj.getFullYear(), baseEndObj.getMonth(), baseEndObj.getDate(), 23, 59, 59, 999).getTime();
 
@@ -1087,7 +1049,6 @@
     }
 
     function updateAGPPanels() {
-      // 1週間と選択期間(Full)のグラフをすべて一度に描画しておく
       drawAgpPanelData(true, true);
       drawAgpPanelData(true, false);
       drawAgpPanelData(false, true);
@@ -1122,7 +1083,6 @@
     }
 
     function updateNavControls() {
-      // Nav Controls
       const baseEnd = new Date(state.dataEndDate);
       const latestDayMs = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0).getTime();
       
@@ -1200,7 +1160,6 @@
       if (requiresFetch) {
         fetchData();
       } else {
-        // Only target mode or period changed, avoid unnecessary API fetch
         if (state.entries.length > 0) {
            updateAllDashboards();
         }
@@ -1243,15 +1202,15 @@
     document.getElementById('btn-prev-day').addEventListener('click', () => {
        if(!state.entries.length) return;
        state.selectedDate -= 86400000;
-       updateTL();         // Selected DayのCGMのみ更新
-       updateNavControls(); // ボタンの活性状態のみ更新
+       updateTL();         
+       updateNavControls(); 
     });
     
     document.getElementById('btn-next-day').addEventListener('click', () => {
        if(!state.entries.length) return;
        state.selectedDate += 86400000;
-       updateTL();         // Selected DayのCGMのみ更新
-       updateNavControls(); // ボタンの活性状態のみ更新
+       updateTL();         
+       updateNavControls(); 
     });
 
     window.addEventListener('DOMContentLoaded', () => {
