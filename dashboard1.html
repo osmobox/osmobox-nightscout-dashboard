@@ -5,13 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Nightscout Analytical Dashboard</title>
 
-  <!-- [最優先防御] スマホでのCDN読み込み失敗や構文エラーを即座に画面に表示する簡易デバッガ -->
-  <script>
-    window.addEventListener('error', function(e) {
-      alert("【JS実行エラー検知】\nメッセージ: " + e.message + "\nファイル: " + e.filename + "\n行番号: " + e.lineno);
-    });
-  </script>
-
   <!-- 外部ライブラリ (deferを統一し、依存関係の順序を厳格化) -->
   <script src="https://cdn.tailwindcss.com" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
@@ -232,16 +225,22 @@
       
       <!-- Top-Left: Selected Day CGM -->
       <div class="panel flex flex-col p-3 min-h-0 relative">
-        <div class="flex justify-between items-center mb-2 flex-none z-10">
-           <h2 class="font-bold text-sm text-slate-200 uppercase tracking-widest">Selected Day</h2>
-           <div class="flex items-center gap-2 bg-slate-800 rounded-md p-1 border border-slate-700">
-              <button id="btn-prev-day" class="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold transition">◀</button>
-              <span id="tl-date" class="text-xs font-black w-20 text-center tracking-wider">--/--</span>
-              <button id="btn-next-day" class="w-6 h-6 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold transition">▶</button>
+        <div class="flex justify-between items-start mb-2 flex-none z-10 w-full border-b border-slate-700/50 pb-1.5">
+           <div class="flex flex-col gap-1">
+             <h2 class="font-bold text-sm text-slate-200 uppercase tracking-widest leading-none mt-0.5">Selected Day</h2>
+             <div class="flex items-center gap-1.5 bg-slate-800 rounded p-0.5 border border-slate-700 mt-0.5">
+               <button id="btn-prev-day" class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] transition">◀</button>
+               <span id="tl-date" class="text-[11px] font-black w-14 text-center tracking-wider">--/--</span>
+               <button id="btn-next-day" class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] transition">▶</button>
+             </div>
            </div>
-           <div class="text-right">
-             <div class="text-[10px] text-slate-400 font-bold uppercase">Score</div>
-             <div id="tl-score" class="text-lg leading-none font-black text-emerald-400">--</div>
+           
+           <!-- Extended Day Metrics -->
+           <div class="flex items-center gap-3 text-right">
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">AVG</div><div class="text-xs font-black text-white" id="tl-avg">--</div></div>
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">CV</div><div class="text-xs font-black text-slate-300"><span id="tl-cv">--</span><span class="text-[9px]">%</span></div></div>
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">GMI/Adj</div><div class="text-xs font-black text-pink-300"><span id="tl-gmi">--</span><span class="text-[9px] text-slate-500">/</span><span id="tl-adj">--</span></div></div>
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">Score</div><div id="tl-score" class="text-base leading-none font-black text-emerald-400">--</div></div>
            </div>
         </div>
         <div class="flex-1 min-h-0 relative w-full h-full">
@@ -251,14 +250,20 @@
       
       <!-- Top-Right: Best Day CGM -->
       <div class="panel flex flex-col p-3 min-h-0 relative">
-        <div class="flex justify-between items-center mb-2 flex-none z-10">
+        <div class="flex justify-between items-start mb-2 flex-none z-10 w-full border-b border-slate-700/50 pb-1.5">
            <div class="flex flex-col">
-             <h2 class="font-bold text-sm text-yellow-400 uppercase tracking-widest flex items-center gap-2">★ Best Day <span id="tr-period-badge" class="text-[10px] bg-yellow-900/50 text-yellow-500 px-1.5 py-0.5 rounded border border-yellow-700/50">--W</span></h2>
-             <span id="tr-date" class="text-xs font-bold text-slate-300">--/--</span>
+             <h2 class="font-bold text-sm text-yellow-400 uppercase tracking-widest flex items-center gap-1.5 leading-none mt-0.5">
+               ★ Best Day <span id="tr-period-badge" class="text-[9px] bg-yellow-900/50 text-yellow-500 px-1 py-0.5 rounded border border-yellow-700/50 leading-none">--W</span>
+             </h2>
+             <span id="tr-date" class="text-[11px] font-bold text-slate-300 mt-1 pl-0.5">--/--</span>
            </div>
-           <div class="text-right">
-             <div class="text-[10px] text-yellow-500/80 font-bold uppercase">Max Score</div>
-             <div id="tr-score" class="text-lg leading-none font-black text-yellow-400">--</div>
+           
+           <!-- Extended Day Metrics -->
+           <div class="flex items-center gap-3 text-right">
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">AVG</div><div class="text-xs font-black text-white" id="tr-avg">--</div></div>
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">CV</div><div class="text-xs font-black text-slate-300"><span id="tr-cv">--</span><span class="text-[9px]">%</span></div></div>
+             <div><div class="text-[8px] text-slate-400 font-bold uppercase">GMI/Adj</div><div class="text-xs font-black text-pink-300"><span id="tr-gmi">--</span><span class="text-[9px] text-slate-500">/</span><span id="tr-adj">--</span></div></div>
+             <div><div class="text-[8px] text-yellow-500/80 font-bold uppercase">Max Score</div><div id="tr-score" class="text-base leading-none font-black text-yellow-400">--</div></div>
            </div>
         </div>
         <div class="flex-1 min-h-0 relative w-full h-full">
@@ -407,12 +412,11 @@
      <div class="loader mb-6"></div>
      <div class="text-white text-lg font-black tracking-widest uppercase mb-2">Fetching Data</div>
      <div class="text-slate-400 text-sm font-bold text-center px-4 max-w-sm">
-        Downloading up to 12 weeks of historical data.<br>This may take a few moments.
+       Downloading up to 12 weeks of historical data.<br>This may take a few moments.
      </div>
   </div>
 
   <script>
-    // 全ての処理を DOMContentLoaded 後に安全に実行
     window.addEventListener('DOMContentLoaded', function() {
       
     // --- Clinical A1c Calculator (高血糖ブースト＋低血糖時間除外・最適化版) ---
@@ -462,7 +466,6 @@
 
           // 3. 【ロジック修正】70未満（低血糖）の時間はADJの集計（重み）から完全に除外
           if (v < 70) {
-            // 70未満の時は糖化が進行しないため、ADJ用の重みを0にして分子・分母への寄与を断つ
             var effWeight = 0; 
             var vEff = 0;
           } else {
@@ -489,11 +492,9 @@
 
         if (sumBaseWeight === 0) return { adjustedGmi: 0, gmi: 0 };
 
-        // 純粋な時間加重平均からベースGMIを算出
         var weightedMean = sumWeightedSgv / sumBaseWeight;
         var gmi = 3.31 + 0.02392 * weightedMean;
         
-        // 低血糖時間を除外した集計から実効加重平均（ADJ用）を算出
         var adjustedGmi = gmi; // フォールバック
         if (sumEffWeight > 0) {
           var effWeightedMean = sumWeightedEffSgv / sumEffWeight;
@@ -753,8 +754,10 @@
 
       function calculateSummaries() {
         var targetLabel = state.targetMode === 'titr' ? 'TITR' : 'TIR';
-        safeSetText('label-tir', targetLabel);
-        safeSetText('label-tir-score', targetLabel + ' SCORE');
+        var labelTir = document.getElementById('label-tir');
+        if (labelTir) labelTir.textContent = targetLabel;
+        var labelTirScore = document.getElementById('label-tir-score');
+        if (labelTirScore) labelTirScore.textContent = targetLabel + ' SCORE';
 
         var baseEnd = new Date(state.dataEndDate);
         var todayStart = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0);
@@ -784,7 +787,7 @@
         }
         
         if (window.location.protocol === 'https:' && urlBase.startsWith('http:')) {
-           alert("【Mixed Content 警告】\nダッシュボード（HTTPS）からHTTPのNightscoutへはスマホブラウザの仕様によりアクセスできません。URL側を https:// に修正してください。");
+           alert("【Mixed Content 警告】\nダッシュボード（HTTPS）からHTTP of Nightscoutへはスマホブラウザの仕様によりアクセスできません。URL側を https:// に修正してください。");
         }
         
         showLoading();
@@ -1014,8 +1017,15 @@
         var start = state.selectedDate;
         var end = start + 86400000 - 1;
         var stats = calcStatsForPeriod(new Date(start), new Date(end));
-        document.getElementById('tl-date').textContent = formatShortDate(start);
-        document.getElementById('tl-score').textContent = Math.round(stats.tirScore).toString();
+        
+        safeSetText('tl-date', formatShortDate(start));
+        safeSetText('tl-score', Math.round(stats.tirScore).toString());
+        
+        // 追加されたメトリクスの描画
+        safeSetText('tl-avg', stats.mean > 0 ? Math.round(stats.mean) : '--');
+        safeSetText('tl-cv', Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+        safeSetText('tl-gmi', stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
+        safeSetText('tl-adj', stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
         
         var dayEntries = state.entries.filter(function(e) { return e.date >= start && e.date <= end; });
         renderCGMChart('tl-chart', dayEntries, start, end);
@@ -1049,17 +1059,30 @@
 
       function updateTR() {
         var best = findBestDay();
-        document.getElementById('tr-period-badge').textContent = state.periodWeeks + 'W';
+        safeSetText('tr-period-badge', state.periodWeeks + 'W');
         
         if(!best.date) {
-           document.getElementById('tr-date').textContent = '--/--';
-           document.getElementById('tr-score').textContent = '--';
+           safeSetText('tr-date', '--/--');
+           safeSetText('tr-score', '--');
+           safeSetText('tr-avg', '--');
+           safeSetText('tr-cv', '--');
+           safeSetText('tr-gmi', '--');
+           safeSetText('tr-adj', '--');
            if(chartInstances['tr-chart']) chartInstances['tr-chart'].destroy();
            return;
         }
         
-        document.getElementById('tr-date').textContent = formatShortDate(best.date);
-        document.getElementById('tr-score').textContent = Math.round(best.score).toString();
+        var stats = calcStatsForPeriod(new Date(best.date), new Date(best.date + 86400000 - 1));
+        
+        safeSetText('tr-date', formatShortDate(best.date));
+        safeSetText('tr-score', Math.round(best.score).toString());
+        
+        // 追加されたメトリクスの描画
+        safeSetText('tr-avg', stats.mean > 0 ? Math.round(stats.mean) : '--');
+        safeSetText('tr-cv', Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
+        safeSetText('tr-gmi', stats.gmi > 0 ? stats.gmi.toFixed(1) : '--');
+        safeSetText('tr-adj', stats.adjustedGmi > 0 ? stats.adjustedGmi.toFixed(1) : '--');
+        
         renderCGMChart('tr-chart', best.entries, best.date, best.date + 86400000 - 1);
       }
 
@@ -1137,13 +1160,19 @@
         var baseEnd = new Date(state.dataEndDate);
         var latestDayMs = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0).getTime();
         
-        document.getElementById('btn-next-day').disabled = state.selectedDate >= latestDayMs;
-        document.getElementById('btn-next-day').style.opacity = document.getElementById('btn-next-day').disabled ? '0.3' : '1';
+        var btnNextDay = document.getElementById('btn-next-day');
+        if (btnNextDay) {
+          btnNextDay.disabled = state.selectedDate >= latestDayMs;
+          btnNextDay.style.opacity = btnNextDay.disabled ? '0.3' : '1';
+        }
         
         var maxDaysNeeded = (state.periodWeeks * 7 * 2); 
         var minAllowedDate = latestDayMs - (maxDaysNeeded * 86400000) + 1;
-        document.getElementById('btn-prev-day').disabled = (state.selectedDate - 86400000) < minAllowedDate;
-        document.getElementById('btn-prev-day').style.opacity = document.getElementById('btn-prev-day').disabled ? '0.3' : '1';
+        var btnPrevDay = document.getElementById('btn-prev-day');
+        if (btnPrevDay) {
+          btnPrevDay.disabled = (state.selectedDate - 86400000) < minAllowedDate;
+          btnPrevDay.style.opacity = btnPrevDay.disabled ? '0.3' : '1';
+        }
       }
 
       function updateAllDashboards() {
@@ -1178,7 +1207,7 @@
         });
       }
 
-      // --- Event Listeners 登録 (安全な実在検証付) ---
+      // --- Event Listeners 登録 ---
       var btnOpenSettings = document.getElementById('btn-open-settings');
       if(btnOpenSettings) btnOpenSettings.addEventListener('click', function() { showModal(false); });
       
@@ -1208,8 +1237,10 @@
           console.warn("Could not write to localStorage.");
         }
         
-        document.getElementById('bl-period-badge-full').textContent = state.periodWeeks + " Weeks";
-        document.getElementById('br-period-badge-full').textContent = state.periodWeeks + " Weeks";
+        var blBadge = document.getElementById('bl-period-badge-full');
+        if (blBadge) blBadge.textContent = state.periodWeeks + " Weeks";
+        var brBadge = document.getElementById('br-period-badge-full');
+        if (brBadge) brBadge.textContent = state.periodWeeks + " Weeks";
         
         updateTargetToggleUI();
         updatePeriodToggleUI();
@@ -1242,8 +1273,10 @@
           state.periodWeeks = newWeeks;
           try { localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString()); } catch(e){}
           
-          document.getElementById('bl-period-badge-full').textContent = state.periodWeeks + " Weeks";
-          document.getElementById('br-period-badge-full').textContent = state.periodWeeks + " Weeks";
+          var blBadge = document.getElementById('bl-period-badge-full');
+          if (blBadge) blBadge.textContent = state.periodWeeks + " Weeks";
+          var brBadge = document.getElementById('br-period-badge-full');
+          if (brBadge) brBadge.textContent = state.periodWeeks + " Weeks";
           
           updatePeriodToggleUI();
           
@@ -1253,7 +1286,6 @@
         });
       });
 
-      // HTMLのonclickからの移行用グローバルマッピング
       window.toggleAgpPeriod = function() {
          state.agpPeriodMode = state.agpPeriodMode === '1w' ? 'full' : '1w';
          toggleAgpVisibility();
@@ -1286,8 +1318,10 @@
       if (!state.url) {
         showModal(true);
       } else {
-        document.getElementById('bl-period-badge-full').textContent = state.periodWeeks + " Weeks";
-        document.getElementById('br-period-badge-full').textContent = state.periodWeeks + " Weeks";
+        var blBadge = document.getElementById('bl-period-badge-full');
+        if (blBadge) blBadge.textContent = state.periodWeeks + " Weeks";
+        var brBadge = document.getElementById('br-period-badge-full');
+        if (brBadge) brBadge.textContent = state.periodWeeks + " Weeks";
         fetchData();
       }
     });
