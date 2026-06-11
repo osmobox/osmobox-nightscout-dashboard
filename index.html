@@ -9,14 +9,18 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Nightscout Dashboard Stable</title>
 
+  <!--
+    安定性のためライブラリのメジャー/マイナーバージョンを固定。
+    （バージョン未指定だと将来の破壊的アップデートでコード無変更のまま全停止するため）
+  -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.294.0/dist/umd/lucide.min.js"></script>
 
   <style>
     :root {
@@ -545,54 +549,101 @@
   </div>
 
   <script>
-    lucide.createIcons();
+    'use strict';
 
+    // ===== ライブラリロード失敗ガード =====
+    // 旧コードは先頭で lucide.createIcons() を無条件に呼んでいたため、
+    // アイコン用CDNが落ちただけで後続のアプリ全体が初期化されずに死んでいた。
+    // Chart.js（必須）が無い場合のみ明示的にエラー表示して停止し、
+    // lucide（装飾）は無くてもアプリ本体は動作継続させる。
+    if (typeof Chart === 'undefined') {
+      document.addEventListener('DOMContentLoaded', () => {
+        const div = document.createElement('div');
+        div.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#000;color:#f87171;font-size:14px;z-index:9999;text-align:center;padding:1rem;';
+        div.textContent = 'Failed to load chart library (CDN). Check network connection and reload.';
+        document.body.appendChild(div);
+      });
+      throw new Error('Chart.js failed to load');
+    }
+
+    try {
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+    } catch (e) {
+      console.warn('lucide icons unavailable:', e);
+    }
+
+    // ===== localStorage 安全ラッパ =====
+    // 一部のWebView・プライベートモードでは localStorage アクセス自体が
+    // SecurityError を投げ、起動時に即死するため try-catch で包む。
+    const safeStorage = {
+      get(key) {
+        try { return localStorage.getItem(key); } catch (e) { return null; }
+      },
+      set(key, value) {
+        try { localStorage.setItem(key, value); } catch (e) { console.warn('localStorage unavailable:', e); }
+      },
+      remove(key) {
+        try { localStorage.removeItem(key); } catch (e) { /* noop */ }
+      }
+    };
+
+    // GMI (標準)  : Bergenstal 2018 のコンセンサス式 = 3.31 + 0.02392 × 平均血糖(mg/dL)。
+    // Adj (動的GMI): 赤血球の代謝回転を反映した recency-weighted GMI。各測定値を
+    //               exp(-経過日数 / τ) で重み付けし直近のグルコースを厚く評価する。
+    //               τ=45日 → 直近30日が寄与の約50%。HbA1c は全グルコース曝露の積分なので
+    //               低血糖除外や変動・高血糖ペナルティのような恣意的補正は行わない。
+    //               血糖が安定していれば Adj ≈ GMI、直近で改善/悪化していれば乖離する。
+    // 注意: 個人の赤血球寿命・糖化率の差(±0.5%程度)は補正できず、実測 HbA1c の代替ではない。
     class ClinicalA1cCalculator {
       constructor(config = {}) {
-        this.lowThreshold = config.lowThreshold || 70;
-        this.highThreshold = config.highThreshold || 180;
-        this.veryHighThreshold = config.veryHighThreshold || 250;
-        this.penaltyHigh = config.penaltyHigh || 0.005;
-        this.penaltyVeryHigh = config.penaltyVeryHigh || 0.010;
-      }
-      _extractValues(rawData) {
-        if (!Array.isArray(rawData)) return [];
-        return rawData
-          .map(item => Number(item.sgv ?? item.glucose ?? item.value ?? 0))
-          .filter(v => Number.isFinite(v) && v > 0);
+        this.rbcTauDays = config.rbcTauDays || 45;
       }
       analyze(glucoseData) {
-        const values = this._extractValues(glucoseData);
-        if (values.length === 0) return { adjustedGmi: 0, gmi: 0 };
+        if (!Array.isArray(glucoseData) || glucoseData.length === 0) {
+          return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
+        }
 
-        const total = values.length;
-        const mean = values.reduce((acc, val) => acc + val, 0) / total;
+        // {ms, v} を抽出し時刻順にソート(暴露時間の算出に必要)
+        const points = glucoseData
+          .map(d => ({ ms: toTimeMs(d), v: Number(d.sgv ?? d.glucose ?? d.value) }))
+          .filter(p => Number.isFinite(p.v) && p.v > 0 && Number.isFinite(p.ms) && p.ms > 0)
+          .sort((a, b) => a.ms - b.ms);
 
+        if (points.length === 0) return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
+
+        const latestMs = points[points.length - 1].ms;
+        let sumDur = 0, sumDurSgv = 0, sumW = 0, sumWSgv = 0;
+
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+
+          // 暴露時間(AUC)。ギャップは 15 分で頭打ちにして欠測の過大評価を防ぐ。
+          let durationMs = 5 * 60 * 1000;
+          if (i > 0) {
+            durationMs = p.ms - points[i - 1].ms;
+            if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
+            if (durationMs <= 0) durationMs = 5 * 60 * 1000;
+          }
+          sumDur += durationMs;
+          sumDurSgv += p.v * durationMs;
+
+          // 赤血球動態に基づく指数関数的減衰(全値を対象、除外・ブーストなし)
+          const ageDays = (latestMs - p.ms) / 86400000;
+          const w = durationMs * Math.exp(-ageDays / this.rbcTauDays);
+          sumW += w;
+          sumWSgv += p.v * w;
+        }
+
+        if (sumDur === 0) return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
+
+        const mean = sumDurSgv / sumDur;
         const gmi = 3.31 + 0.02392 * mean;
-
-        const tar = values.filter(v => v > this.highThreshold).length / total * 100;
-        const vTar = values.filter(v => v > this.veryHighThreshold).length / total * 100;
-        const tbr = values.filter(v => v < this.lowThreshold).length / total * 100;
-
-        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
-        const cv = mean > 0 ? (sd / mean) * 100 : 0;
-
-        const nonLowValues = values.filter(v => v >= this.lowThreshold);
-        const nonLowMean = nonLowValues.length ? nonLowValues.reduce((a, b) => a + b, 0) / nonLowValues.length : mean;
-        let baseGmi = 3.31 + 0.02392 * nonLowMean;
-
-        const variabilityFactor = cv > 36 ? (cv - 36) * 0.01 : 0;
-        const hypoRiskFactor = tbr * 0.015;
-
-        const adjustedGmi = baseGmi +
-          (tar * this.penaltyHigh) +
-          (vTar * this.penaltyVeryHigh) +
-          variabilityFactor +
-          hypoRiskFactor;
+        const adjustedGmi = sumW > 0 ? 3.31 + 0.02392 * (sumWSgv / sumW) : gmi;
 
         return {
           adjustedGmi: Number(adjustedGmi.toFixed(2)),
-          gmi: Number(gmi.toFixed(2))
+          gmi: Number(gmi.toFixed(2)),
+          meanGlucose: Number(mean.toFixed(1))
         };
       }
     }
@@ -611,8 +662,8 @@
     };
 
     const state = {
-      url: localStorage.getItem('ns-url') || '',
-      secret: localStorage.getItem('ns-token') || localStorage.getItem('ns-secret') || '',
+      url: safeStorage.get('ns-url') || '',
+      secret: safeStorage.get('ns-token') || safeStorage.get('ns-secret') || '',
       data: { entries: [], treatments: [], profile: null, devicestatus: [] },
       timeRangeHours: 6,
       offsetDays: 0,
@@ -621,7 +672,9 @@
       lastSummaryCalcAt: 0,
       lastMainChartSignature: '',
       loadedDeviceStatusDays: new Set(),
-      lastHistoryInteractionAt: 0
+      lastHistoryInteractionAt: 0,
+      isFetching: false,      // fetchAllData の多重実行防止
+      isNavigating: false     // jumpToDay（日付ボタン連打）の多重実行防止
     };
 
     let chartInstance = null;
@@ -631,6 +684,12 @@
     let agpMode = false;
     let currentLayoutPattern = 0;
     let idleMinutes = 0;
+
+    // 旧コードはメインチャートとAGPチャートの描画関数内でそれぞれ
+    // Chart.defaults.color をグローバル上書きし合っていたため、
+    // 再描画のタイミング次第で文字色が入れ替わる不具合があった。初期化時に1回だけ設定する。
+    Chart.defaults.color = '#64748b';
+    Chart.defaults.font.family = 'Inter, sans-serif';
 
     const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
@@ -695,11 +754,25 @@
       } else {
         showError(`Failed to load IOB for ${key}`);
       }
+      // 「Loading YYYY-MM-DD」表示を経過時間表示に戻す
+      refreshLastUpdateLabel();
     }
 
     function showError(msg) {
       const errDiv = document.getElementById('error-message');
       if (errDiv) { errDiv.textContent = msg; errDiv.classList.remove('hidden'); }
+    }
+
+    // 最新エントリからの経過時間表示を復元する。
+    // 旧コードでは履歴日ロード後に「Loading YYYY-MM-DD」表示が
+    // 次の定期更新まで（履歴モード中は無期限に）残り続けていた。
+    function refreshLastUpdateLabel(latestMs) {
+      if (!Number.isFinite(latestMs) || latestMs <= 0) {
+        const entries = state.data.entries;
+        latestMs = entries.length ? toTimeMs(entries[entries.length - 1]) : 0;
+      }
+      const timeDiff = latestMs ? Math.floor((Date.now() - latestMs) / 60000) : null;
+      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : `${timeDiff} min ago`);
     }
 
     function hideError() {
@@ -721,6 +794,13 @@
       state.data.entries = state.data.entries.filter(e => toTimeMs(e) >= cutoffMs);
       state.data.treatments = state.data.treatments.filter(t => toTimeMs(t, 'created_at') >= cutoffMs);
       state.data.devicestatus = state.data.devicestatus.filter(d => toTimeMs(d, 'created_at') >= cutoffMs);
+
+      // 常時稼働ダッシュボードのため、ロード済み日付キーも保持期間外を削除する。
+      // （旧コードでは Set が無限に増え続けていた）
+      const cutoffKey = dateKeyFromDate(cutoff);
+      for (const key of state.loadedDeviceStatusDays) {
+        if (key < cutoffKey) state.loadedDeviceStatusDays.delete(key);
+      }
     }
 
     function buildEndpoint(path, params = {}) {
@@ -763,6 +843,10 @@
 
     async function fetchAllData(forceFull = false) {
       if (!state.url || document.hidden) return;
+
+      // interval・visibilitychange・returnToToday が重なった際の並行フェッチを防止。
+      if (state.isFetching) return;
+      state.isFetching = true;
 
       const now = new Date();
       const shouldFullFetch = forceFull || !state.data.entries.length || !state.lastFetchAt;
@@ -822,6 +906,8 @@
       } catch (error) {
         console.error(error);
         showError('Data update failed.');
+      } finally {
+        state.isFetching = false;
       }
     }
 
@@ -886,19 +972,30 @@
 
     function updateUI({ dataFetched = false } = {}) {
       const entries = state.data.entries;
-      if (!entries.length) return;
+      if (!entries.length) {
+        // 接続は成功したがデータが0件の場合、旧コードでは「Loading...」表示のまま
+        // 永久に固まっていたため、状態を明示する。
+        if (dataFetched) safeSetText('last-update-time', 'No data');
+        return;
+      }
 
       const latest = entries[entries.length - 1];
       const latestBg = Number(latest.sgv ?? latest.glucose ?? latest.value);
       const colorClass = getBgColorClass(latestBg);
 
+      // 旧コードはここだけ null チェックなしの直接アクセスで、
+      // 要素欠落時に TypeError → 更新処理全体が停止していた。
       const currentBgEl = document.getElementById('current-bg');
-      currentBgEl.textContent = Number.isFinite(latestBg) ? latestBg : '---';
-      setDynamicColor(currentBgEl, colorClass);
+      if (currentBgEl) {
+        currentBgEl.textContent = Number.isFinite(latestBg) ? latestBg : '---';
+        setDynamicColor(currentBgEl, colorClass);
+      }
 
       const arrowEl = document.getElementById('trend-arrow');
-      arrowEl.textContent = getDirectionArrow(latest.direction);
-      setDynamicColor(arrowEl, colorClass);
+      if (arrowEl) {
+        arrowEl.textContent = getDirectionArrow(latest.direction);
+        setDynamicColor(arrowEl, colorClass);
+      }
 
       if (entries.length > 1) {
         const prev = entries[entries.length - 2];
@@ -908,8 +1005,7 @@
       }
 
       const latestMs = toTimeMs(latest);
-      const timeDiff = latestMs ? Math.floor((Date.now() - latestMs) / 60000) : null;
-      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : `${timeDiff} min ago`);
+      refreshLastUpdateLabel(latestMs);
 
       const dsList = state.data.devicestatus;
       const ds = dsList.length ? dsList[dsList.length - 1] : null;
@@ -944,6 +1040,12 @@
     }
 
     function calculateSummaries() {
+      // 短時間に updateUI が連続実行された場合（タブ復帰直後＋定期更新の重複など）の
+      // 重複計算を抑止する。state.lastSummaryCalcAt は旧コードで定義のみされ未使用だった。
+      const nowMs = Date.now();
+      if (nowMs - state.lastSummaryCalcAt < 30 * 1000) return;
+      state.lastSummaryCalcAt = nowMs;
+
       const now = new Date();
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
       const todayEnd = new Date(todayStart); todayEnd.setDate(todayEnd.getDate() + 1);
@@ -1039,18 +1141,44 @@
       };
     }
 
-    function getProfileBasalRate(date) {
-      const basal = state.data.profile?.basal;
-      if (!Array.isArray(basal) || !basal.length) return 0;
+    // ===== プロファイルスケジュール参照の共通化 =====
+    // 旧コードは timeAsSeconds が存在することを前提にしていたが、
+    // "time": "06:00" 形式のみのプロファイルでは全要素が 0 扱いとなり、
+    // 「最後の時間帯の値が終日適用される」という静かな計算誤りが発生していた。
+    // time 文字列からのフォールバック変換を追加する。
+    function scheduleEntrySeconds(entry) {
+      const tas = Number(entry?.timeAsSeconds);
+      if (Number.isFinite(tas) && tas >= 0) return tas;
+      const time = entry?.time;
+      if (typeof time === 'string') {
+        const m = time.match(/^(\d{1,2}):(\d{2})/);
+        if (m) return Number(m[1]) * 3600 + Number(m[2]) * 60;
+      }
+      return 0;
+    }
+
+    function getScheduledValue(schedule, date, fallback = 0) {
+      if (!Array.isArray(schedule) || !schedule.length) return fallback;
       const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
-      let rate = Number(basal[0].value || 0);
-      for (let i = basal.length - 1; i >= 0; i--) {
-        if (secondsSinceMidnight >= Number(basal[i].timeAsSeconds || 0)) {
-          rate = Number(basal[i].value || 0);
-          break;
+      let value = Number(schedule[0].value);
+      if (!Number.isFinite(value)) value = fallback;
+      // スケジュールが時刻順である保証はないため、明示的に「現在時刻以前で最大の開始時刻」を選ぶ。
+      let bestSeconds = -1;
+      for (const entry of schedule) {
+        const entrySeconds = scheduleEntrySeconds(entry);
+        if (secondsSinceMidnight >= entrySeconds && entrySeconds > bestSeconds) {
+          const v = Number(entry.value);
+          if (Number.isFinite(v)) {
+            value = v;
+            bestSeconds = entrySeconds;
+          }
         }
       }
-      return rate;
+      return value;
+    }
+
+    function getProfileBasalRate(date) {
+      return getScheduledValue(state.data.profile?.basal, date, 0);
     }
 
     function getTempBasalAbsolute(t) {
@@ -1062,23 +1190,30 @@
     function calculateIntegralBasal(startDate, endDate, periodTreats) {
       if (!state.data.profile?.basal) return 0;
       let total = 0;
-      const tempBasals = periodTreats.filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null);
-      let current = new Date(startDate);
-      const end = new Date(Math.min(endDate.getTime(), Date.now()));
+      const tempBasals = periodTreats
+        .filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null)
+        .map(t => {
+          const start = toTimeMs(t, 'created_at');
+          return { start, end: start + Number(t.duration) * 60000, rate: getTempBasalAbsolute(t) };
+        });
 
-      while (current < end) {
-        const timeMs = current.getTime();
-        let rate = getProfileBasalRate(current);
+      // 旧コードは1分刻みの while ループ（7日分で1万回超×線形探索）を
+      // 3分ごとの定期更新のたびに回しており、低スペック端末でのUIフリーズの主因だった。
+      // ステップを5分に変更（基礎レート変更の実用的な最小粒度）し、Date の破壊的変更も廃止。
+      const STEP_MS = 5 * 60 * 1000;
+      const STEP_HOURS = STEP_MS / 3600000;
+      const endMs = Math.min(endDate.getTime(), Date.now());
+      for (let timeMs = startDate.getTime(); timeMs < endMs; timeMs += STEP_MS) {
+        // 期間末尾の端数ステップは実時間分のみ積算する
+        const effectiveHours = timeMs + STEP_MS > endMs ? (endMs - timeMs) / 3600000 : STEP_HOURS;
+        let rate = getProfileBasalRate(new Date(timeMs));
         for (const tb of tempBasals) {
-          const tbStart = toTimeMs(tb, 'created_at');
-          const tbEnd = tbStart + Number(tb.duration) * 60000;
-          if (timeMs >= tbStart && timeMs < tbEnd) {
-            rate = getTempBasalAbsolute(tb);
+          if (timeMs >= tb.start && timeMs < tb.end) {
+            rate = tb.rate;
             break;
           }
         }
-        total += rate / 60;
-        current.setMinutes(current.getMinutes() + 1);
+        total += rate * effectiveHours;
       }
       return total;
     }
@@ -1177,7 +1312,10 @@
       const scatterData = plotEntries
         .map(e => ({ x: toTimeMs(e), y: Number(e.sgv ?? e.glucose ?? e.value) }))
         .filter(d => Number.isFinite(d.y));
-      const yAxisMax = Math.max(250, ...scatterData.map(d => d.y)) + 30;
+      // スプレッド展開（Math.max(...arr)）は要素数が多いと
+      // RangeError: Maximum call stack size exceeded を起こし得るため reduce を使う。
+      const dataMax = scatterData.reduce((max, d) => (d.y > max ? d.y : max), 250);
+      const yAxisMax = dataMax + 30;
       const yAxisMin = 40;
 
       const annotations = {
@@ -1195,17 +1333,24 @@
         };
       }
 
-      plotTreats.forEach((t, i) => {
+      // ラベルアノテーションは1個ごとに描画コストが高く、SMB多用環境では
+      // 8日分で数百〜千個に達して描画フリーズの原因になり得るため上限を設ける。
+      // plotTreats は時刻昇順のため、末尾（新しい側）から優先して生成する。
+      const MAX_TREAT_ANNOTATIONS = 600;
+      let treatAnnotationCount = 0;
+      for (let i = plotTreats.length - 1; i >= 0 && treatAnnotationCount < MAX_TREAT_ANNOTATIONS; i--) {
+        const t = plotTreats[i];
         const time = toTimeMs(t, 'created_at');
         const carbs = Number(t.carbs || 0);
         const insulin = Number(t.insulin || 0);
         if (carbs > 0) {
           const p = Math.max(3, Math.sqrt(carbs) * 1.5);
           annotations[`carb_${i}`] = { type: 'label', xValue: time, yValue: yAxisMax - 25, backgroundColor: 'rgba(234,179,8,0.7)', color: '#fff', content: `${carbs}`, font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 3, right: p + 3 } };
+          treatAnnotationCount++;
         }
         if (insulin > 0) {
           const type = (t.eventType || '').toLowerCase();
-          if (type.includes('temp basal') || type.includes('profile')) return;
+          if (type.includes('temp basal') || type.includes('profile')) continue;
           const isSMB = isLikelySMB(t);
           const color = isSMB ? 'rgba(168, 85, 247, 0.9)' : 'rgba(6, 182, 212, 0.85)';
           const p = Math.max(3, Math.sqrt(insulin) * 3);
@@ -1214,8 +1359,9 @@
             content: `${insulin}`,
             font: { size: 11, weight: 'bold' }, borderRadius: 999, padding: { top: p, bottom: p, left: p + 4, right: p + 4 }
           };
+          treatAnnotationCount++;
         }
-      });
+      }
 
       const basalData = [];
       const profileBasalData = [];
@@ -1257,23 +1403,9 @@
         const timeMs = toTimeMs(ds, 'created_at');
 
         if (Number.isFinite(cobVal) && cobVal > 0) {
-          // その時刻のプロファイルからCR（Carb Ratio）を取得
-          // プロファイルにない場合は暫定で10を設定
-          let cr = 10;
-          if (state.data.profile?.carbratio) {
-            const date = new Date(timeMs);
-            const secondsSinceMidnight = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
-            const crSchedule = state.data.profile.carbratio;
-            if (Array.isArray(crSchedule) && crSchedule.length) {
-              cr = Number(crSchedule[0].value || 10);
-              for (let i = crSchedule.length - 1; i >= 0; i--) {
-                if (secondsSinceMidnight >= Number(crSchedule[i].timeAsSeconds || 0)) {
-                  cr = Number(crSchedule[i].value || 10);
-                  break;
-                }
-              }
-            }
-          }
+          // その時刻のプロファイルからCR（Carb Ratio）を取得（無ければ暫定で10）。
+          // timeAsSeconds が無いプロファイルにも対応する共通ヘルパーを使用。
+          const cr = getScheduledValue(state.data.profile?.carbratio, new Date(timeMs), 10) || 10;
 
           // インスリン軸とスケールを合わせるため、COBをCRで割った値をプロット用Y値とする
           const cobInsulinEquivalent = cr > 0 ? (cobVal / cr) : 0;
@@ -1328,14 +1460,15 @@
           const d = new Date(hoverTime);
           const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
           let html = `<div style="font-size:12px;color:#cbd5e1;font-weight:bold;margin-bottom:4px;border-bottom:1px solid rgba(71,85,105,0.5);padding-bottom:4px;">${timeStr}</div>`;
-          const bgValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'BG')?.raw.y;
+          // ?.raw.y は raw が undefined のとき TypeError になるため ?.raw?.y に修正。
+          const bgValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'BG')?.raw?.y;
           if (bgValue !== undefined) html += `<div style="font-size:16px;font-weight:900;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">BG:</span> ${bgValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
-          const predValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Predicted')?.raw.y;
+          const predValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Predicted')?.raw?.y;
           if (predValue !== undefined && bgValue === undefined) html += `<div style="font-size:15px;font-weight:bold;color:#c084fc;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">Pred:</span> ${predValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
-          const basalValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Basal')?.raw.y;
-          if (basalValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ${basalValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U/h</span></div>`;
-          const iobValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'IOB')?.raw.y;
-          if (iobValue !== undefined) html += `<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ${iobValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U</span></div>`;
+          const basalValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Basal')?.raw?.y;
+          if (Number.isFinite(basalValue)) html += `<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ${basalValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U/h</span></div>`;
+          const iobValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'IOB')?.raw?.y;
+          if (Number.isFinite(iobValue)) html += `<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ${iobValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U</span></div>`;
           // --- ここから追加：ツールチップへのCOB元データ復元表示 ---
           const cobRawPoint = tooltip.dataPoints.find(dp => dp.dataset.label === 'COB')?.raw;
           if (cobRawPoint !== undefined) {
@@ -1389,9 +1522,6 @@
 
       if (!force && chartInstance && signature === state.lastMainChartSignature) return;
       state.lastMainChartSignature = signature;
-
-      Chart.defaults.color = '#64748b';
-      Chart.defaults.font.family = 'Inter, sans-serif';
 
       const yBasalMax = Math.max(payload.maxBasalVal * 6, 3);
       const yIobMax = Math.max(payload.maxIobVal * 4, 4);
@@ -1572,9 +1702,6 @@
       if (!force && agpChartInstance && now - state.lastAgpDrawAt < CONFIG.AGP_REFRESH_INTERVAL_MS) return;
       state.lastAgpDrawAt = now;
 
-      Chart.defaults.color = '#94a3b8';
-      Chart.defaults.font.family = 'Inter, sans-serif';
-
       const { percentiles, todayData } = buildAgpData();
 
       const profEl = document.getElementById('agpProfileChart');
@@ -1602,9 +1729,10 @@
     }
 
     function toggleSummary() {
-      agpMode = !agpMode;
       const defEl = document.getElementById('summary-default');
       const agpEl = document.getElementById('summary-agp');
+      if (!defEl || !agpEl) return;
+      agpMode = !agpMode;
       if (agpMode) {
         defEl.classList.add('invisible');
         agpEl.classList.remove('hidden');
@@ -1712,16 +1840,23 @@
     }
 
     async function jumpToDay(offsetDays) {
-      state.offsetDays = Math.max(0, Math.min(7, Number(offsetDays) || 0));
-      state.lastHistoryInteractionAt = state.offsetDays > 0 ? Date.now() : 0;
-      updateDateControls();
+      // 日付送りボタンの連打による fetchDeviceStatusForDay の並行実行を防止
+      if (state.isNavigating) return;
+      state.isNavigating = true;
+      try {
+        state.offsetDays = Math.max(0, Math.min(7, Number(offsetDays) || 0));
+        state.lastHistoryInteractionAt = state.offsetDays > 0 ? Date.now() : 0;
+        updateDateControls();
 
-      if (state.offsetDays > 0) {
-        await fetchDeviceStatusForDay(state.offsetDays);
+        if (state.offsetDays > 0) {
+          await fetchDeviceStatusForDay(state.offsetDays);
+        }
+
+        state.lastMainChartSignature = '';
+        updateChart({ force: true });
+      } finally {
+        state.isNavigating = false;
       }
-
-      state.lastMainChartSignature = '';
-      updateChart({ force: true });
     }
 
     function returnToToday() {
@@ -1737,38 +1872,48 @@
       }
     }
 
-    function initEvents() {
-      document.getElementById('summary-panel').addEventListener('click', toggleSummary);
+    // 要素が見つからない場合でも初期化全体が TypeError で停止しないようにするヘルパー。
+    // （旧コードは initEvents 内の1要素欠落で後続の全リスナー登録と initApp が走らなくなる構造だった）
+    function on(id, evt, handler) {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener(evt, handler);
+      else console.warn(`Element #${id} not found; listener skipped`);
+    }
 
-      document.getElementById('btn-fullscreen').addEventListener('click', () => {
+    function initEvents() {
+      on('summary-panel', 'click', toggleSummary);
+
+      on('btn-fullscreen', 'click', () => {
         if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(console.log);
         else document.exitFullscreen?.();
       });
 
-      document.getElementById('btn-settings').addEventListener('click', () => {
-        document.getElementById('ns-url').value = state.url;
-        document.getElementById('ns-secret').value = state.secret;
-        document.getElementById('settings-modal').classList.remove('hidden');
+      on('btn-settings', 'click', () => {
+        const urlEl = document.getElementById('ns-url');
+        const secretEl = document.getElementById('ns-secret');
+        if (urlEl) urlEl.value = state.url;
+        if (secretEl) secretEl.value = state.secret;
+        document.getElementById('settings-modal')?.classList.remove('hidden');
       });
-      document.getElementById('btn-cancel-settings').addEventListener('click', () => document.getElementById('settings-modal').classList.add('hidden'));
-      document.getElementById('btn-save-settings').addEventListener('click', () => {
-        state.url = document.getElementById('ns-url').value.trim().replace(/\/$/, '');
-        state.secret = document.getElementById('ns-secret').value.trim();
-        localStorage.setItem('ns-url', state.url);
-        localStorage.setItem('ns-token', state.secret);
-        localStorage.removeItem('ns-secret');
-        document.getElementById('settings-modal').classList.add('hidden');
+      on('btn-cancel-settings', 'click', () => document.getElementById('settings-modal')?.classList.add('hidden'));
+      on('btn-save-settings', 'click', () => {
+        state.url = (document.getElementById('ns-url')?.value || '').trim().replace(/\/$/, '');
+        state.secret = (document.getElementById('ns-secret')?.value || '').trim();
+        safeStorage.set('ns-url', state.url);
+        safeStorage.set('ns-token', state.secret);
+        safeStorage.remove('ns-secret');
+        document.getElementById('settings-modal')?.classList.add('hidden');
         resetDataAndCharts();
         initApp();
       });
 
-      document.getElementById('btn-prev').addEventListener('click', async () => {
+      on('btn-prev', 'click', async () => {
         await jumpToDay(state.offsetDays + 1);
       });
-      document.getElementById('btn-next').addEventListener('click', async () => {
+      on('btn-next', 'click', async () => {
         await jumpToDay(state.offsetDays - 1);
       });
-      document.getElementById('btn-today').addEventListener('click', returnToToday);
+      on('btn-today', 'click', returnToToday);
       document.querySelectorAll('.time-btn').forEach(btn => {
         btn.addEventListener('click', e => {
           state.timeRangeHours = Number(e.currentTarget.dataset.hours) || 6;
@@ -1790,6 +1935,9 @@
       state.data = { entries: [], treatments: [], profile: null, devicestatus: [] };
       state.lastFetchAt = null;
       state.lastMainChartSignature = '';
+      state.lastSummaryCalcAt = 0;
+      state.lastAgpDrawAt = 0;
+      state.loadedDeviceStatusDays.clear();
       if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
       if (agpChartInstance) { agpChartInstance.destroy(); agpChartInstance = null; }
       if (agpProfileChartInstance) { agpProfileChartInstance.destroy(); agpProfileChartInstance = null; }
@@ -1812,19 +1960,26 @@
 
     setInterval(() => {
       const container = document.getElementById('grid-container');
+      if (!container) return;
       container.classList.remove(`layout-pattern-${currentLayoutPattern}`);
       currentLayoutPattern = (currentLayoutPattern + 1) % 4;
       container.classList.add(`layout-pattern-${currentLayoutPattern}`);
-      requestAnimationFrame(() => {
+      const resizeCharts = () => {
         chartInstance?.resize();
         if (agpMode) { agpChartInstance?.resize(); agpProfileChartInstance?.resize(); }
-      });
+      };
+      requestAnimationFrame(resizeCharts);
+      // グリッドの行サイズは800msのCSS transitionで変化するため、
+      // 完了後にもう一度resizeしないとグラフが潰れたまま残ることがある。
+      setTimeout(resizeCharts, 900);
     }, 10 * 60 * 1000);
 
     setInterval(() => {
+      const shiftEl = document.getElementById('shift-container');
+      if (!shiftEl) return;
       const shiftX = Math.floor(Math.random() * 5) - 2;
       const shiftY = Math.floor(Math.random() * 5) - 2;
-      document.getElementById('shift-container').style.transform = `translate(${shiftX}px, ${shiftY}px)`;
+      shiftEl.style.transform = `translate(${shiftX}px, ${shiftY}px)`;
     }, 60 * 1000);
 
     setInterval(() => {

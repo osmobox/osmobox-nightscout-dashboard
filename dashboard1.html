@@ -229,9 +229,9 @@
            <div class="flex flex-col gap-1">
              <h2 class="font-bold text-sm text-slate-200 uppercase tracking-widest leading-none mt-0.5">Selected Day</h2>
              <div class="flex items-center gap-1.5 bg-slate-800 rounded p-0.5 border border-slate-700 mt-0.5">
-               <button id="btn-prev-day" class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] transition">◀</button>
+               <button id="btn-prev-day" aria-label="Previous day" class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] transition">◀</button>
                <span id="tl-date" class="text-[11px] font-black w-14 text-center tracking-wider">--/--</span>
-               <button id="btn-next-day" class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] transition">▶</button>
+               <button id="btn-next-day" aria-label="Next day" class="w-5 h-5 flex items-center justify-center rounded bg-slate-700 hover:bg-slate-600 text-white font-bold text-[10px] transition">▶</button>
              </div>
            </div>
            
@@ -407,6 +407,20 @@
     </div>
   </div>
 
+  <!-- Error Toast -->
+  <div id="error-toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] hidden max-w-sm w-full mx-4">
+    <div class="bg-red-900 border border-red-600 rounded-lg p-4 shadow-2xl flex items-start gap-3">
+      <i data-lucide="alert-triangle" class="w-5 h-5 text-red-400 flex-none mt-0.5"></i>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-black text-red-200 mb-1">Error</div>
+        <div id="error-toast-msg" class="text-xs text-red-300 leading-relaxed break-words"></div>
+      </div>
+      <button onclick="document.getElementById('error-toast').classList.add('hidden')" class="text-red-400 hover:text-red-200 flex-none ml-1">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
   <!-- Loading Overlay -->
   <div id="loading-overlay" class="fixed inset-0 z-[60] bg-slate-950/90 flex-col items-center justify-center hidden">
      <div class="loader mb-6"></div>
@@ -417,9 +431,33 @@
   </div>
 
   <script>
+    var chartInstances = {};
+
+    window.addEventListener('resize', function() {
+      Object.values(chartInstances).forEach(function(chart) {
+        if (chart) chart.resize();
+      });
+    });
+
     window.addEventListener('DOMContentLoaded', function() {
       
-    // --- Clinical A1c Calculator (高血糖ブースト＋低血糖時間除外・最適化版) ---
+    // --- Clinical A1c Calculator ---
+      //
+      //  GMI (標準)  : Bergenstal 2018 のコンセンサス式。
+      //                GMI(%) = 3.31 + 0.02392 × 平均血糖(mg/dL)。
+      //                Dexcom Clarity / Nightscout と同じ「平均血糖をそのまま線形変換した値」。
+      //
+      //  Adj (動的GMI): 赤血球の代謝回転を反映した recency-weighted GMI。
+      //                各測定値を exp(-経過日数 / τ) で重み付けし、直近のグルコースを
+      //                厚く評価する。τ=45日 → 直近30日が寄与の約50%(Tahara-Shima 系の
+      //                重み配分に整合)。HbA1c は低血糖を含む全グルコース曝露の積分なので、
+      //                低血糖除外や高血糖ブーストのような恣意的補正は行わない。
+      //                血糖が安定していれば Adj ≈ GMI、直近で改善/悪化していれば乖離する。
+      //
+      //  注意: どちらも個人の赤血球寿命・糖化率の差(±0.5%程度)を補正できないため、
+      //        検査室での実測 HbA1c の代替ではない(GMI の定義上の限界)。
+      var RBC_TAU_DAYS = 45;
+
       var ClinicalA1cCalculator = function() {};
       ClinicalA1cCalculator.prototype.analyze = function(glucoseData) {
         var validData = glucoseData.filter(function(d) {
@@ -428,82 +466,52 @@
           return Number.isFinite(v) && v > 0 && Number.isFinite(d.date);
         });
 
-        if (validData.length === 0) return { adjustedGmi: 0, gmi: 0 };
+        if (validData.length === 0) return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
 
         var latestMs = validData[validData.length - 1].date;
-        
-        // 通常のGMI用（低血糖も含める）
-        var sumBaseWeight = 0;
-        var sumWeightedSgv = 0;
-        
-        // ADJ用（低血糖時間を適切に除外・処理するための分離）
-        var sumEffWeight = 0;
-        var sumWeightedEffSgv = 0;
+
+        var sumDur = 0, sumDurSgv = 0;       // 標準GMI(時間平均)用
+        var sumW = 0, sumWSgv = 0;           // 動的GMI(直近重み)用
 
         for (var i = 0; i < validData.length; i++) {
           var d = validData[i];
           var fallbackVal2 = d.sgv !== undefined ? d.sgv : (d.glucose !== undefined ? d.glucose : d.value);
           var v = Number(fallbackVal2);
-          
-          // 1. 暴露時間（AUC）の計算
+
+          // 暴露時間(AUC)。ギャップは 15 分で頭打ちにして欠測の過大評価を防ぐ。
           var durationMs = 5 * 60 * 1000;
           if (i > 0) {
-             var prev = validData[i - 1];
-             durationMs = d.date - prev.date;
-             if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
-             if (durationMs < 0) durationMs = 5 * 60 * 1000;
+            durationMs = d.date - validData[i - 1].date;
+            if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
+            if (durationMs <= 0) durationMs = 5 * 60 * 1000;
           }
+          sumDur += durationMs;
+          sumDurSgv += v * durationMs;
 
-          // 2. 赤血球動態に基づく指数関数的減衰ウェイト（時定数: 45日）
+          // 赤血球動態に基づく指数関数的減衰(全値を対象、除外・ブーストなし)
           var ageDays = (latestMs - d.date) / (1000 * 60 * 60 * 24);
-          var rbcWeight = Math.exp(-ageDays / 45);
-          
-          var finalWeight = durationMs * rbcWeight;
-
-          // 通常GMI用の累積
-          sumBaseWeight += finalWeight;
-          sumWeightedSgv += v * finalWeight;
-
-          // 3. 【ロジック修正】70未満（低血糖）の時間はADJの集計（重み）から完全に除外
-          if (v < 70) {
-            var effWeight = 0; 
-            var vEff = 0;
-          } else {
-            var effWeight = finalWeight;
-            var vEff = v;
-            
-            // 高血糖域のブースト処理
-            if (v >= 100 && v < 140) {
-              vEff = v * 1.01;
-            } else if (v >= 140 && v < 180) {
-              vEff = v * 1.09;
-            } else if (v >= 180 && v < 240) {
-              vEff = v * 1.18;
-            } else if (v >= 240 && v < 300) {
-              vEff = v * 1.28;
-            } else if (v >= 300) {
-              vEff = v * 1.38;
-            }
-          }
-
-          sumEffWeight += effWeight;
-          sumWeightedEffSgv += vEff * effWeight;
+          var w = durationMs * Math.exp(-ageDays / RBC_TAU_DAYS);
+          sumW += w;
+          sumWSgv += v * w;
         }
 
-        if (sumBaseWeight === 0) return { adjustedGmi: 0, gmi: 0 };
+        if (sumDur === 0) return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
 
-        var weightedMean = sumWeightedSgv / sumBaseWeight;
-        var gmi = 3.31 + 0.02392 * weightedMean;
-        
-        var adjustedGmi = gmi; // フォールバック
-        if (sumEffWeight > 0) {
-          var effWeightedMean = sumWeightedEffSgv / sumEffWeight;
-          adjustedGmi = 3.31 + 0.02392 * effWeightedMean;
+        var mean = sumDurSgv / sumDur;
+        var gmi = 3.31 + 0.02392 * mean;
+
+        var adjustedGmi = gmi; // フォールバック(ほぼ単日のデータ等で減衰差が無い場合)
+        if (sumW > 0) {
+          adjustedGmi = 3.31 + 0.02392 * (sumWSgv / sumW);
         }
-        
-        return { adjustedGmi: Number(adjustedGmi.toFixed(2)), gmi: Number(gmi.toFixed(2)) };
+
+        return {
+          adjustedGmi: Number(adjustedGmi.toFixed(2)),
+          gmi: Number(gmi.toFixed(2)),
+          meanGlucose: Number(mean.toFixed(1))
+        };
       };
-      
+
       var a1cCalculator = new ClinicalA1cCalculator();
 
       // --- State Management ---
@@ -535,11 +543,23 @@
         profile: null        
       };
 
-      var chartInstances = {};
+      chartInstances = {};
 
       // --- Core Functions ---
       var safeSetText = function(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; };
       var safeSetStyle = function(id, prop, val) { var el = document.getElementById(id); if (el) el.style[prop] = val; };
+
+      var errorToastTimer = null;
+      function showError(msg) {
+        var toast = document.getElementById('error-toast');
+        var msgEl = document.getElementById('error-toast-msg');
+        if (!toast || !msgEl) { console.error(msg); return; }
+        msgEl.textContent = msg;
+        toast.classList.remove('hidden');
+        if (errorToastTimer) clearTimeout(errorToastTimer);
+        errorToastTimer = setTimeout(function() { toast.classList.add('hidden'); }, 8000);
+        if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
+      }
 
       function showModal(force) {
         document.getElementById('ns-url').value = state.url;
@@ -782,12 +802,14 @@
       async function fetchData() {
         var urlBase = state.url.trim().replace(/\/$/, '');
         if(!urlBase) {
-          alert("Nightscout URL is empty.");
+          showError("Nightscout URL が入力されていません。Settings から設定してください。");
+          showModal(true);
           return;
         }
-        
+
         if (window.location.protocol === 'https:' && urlBase.startsWith('http:')) {
-           alert("【Mixed Content 警告】\nダッシュボード（HTTPS）からHTTP of Nightscoutへはスマホブラウザの仕様によりアクセスできません。URL側を https:// に修正してください。");
+          showError("Mixed Content 警告: HTTPS ページから HTTP の Nightscout へはアクセスできません。Nightscout URL を https:// に変更してください。");
+          return;
         }
         
         showLoading();
@@ -804,16 +826,16 @@
            if (state.token) base += '&token=' + encodeURIComponent(state.token);
            return base;
         };
-        
+
         try {
           var profilePath = urlBase + '/api/v1/profile.json';
           if (state.token) profilePath += '?token=' + encodeURIComponent(state.token);
-          
+
           var fetchWithCheck = async function(url) {
              var res = await fetch(url, { headers: { Accept: 'application/json' }}).catch(function(e) {
-                throw new Error("Network request failed. スマホのセキュリティ制限またはCORS設定エラーです。 (" + e.message + ")");
+                throw new Error("ネットワーク接続失敗。CORS設定またはURL を確認してください。(" + e.message + ")");
              });
-             if (!res.ok) throw new Error("Server responded with status: " + res.status);
+             if (!res.ok) throw new Error("サーバーエラー: HTTP " + res.status);
              return res.json();
           };
 
@@ -849,7 +871,7 @@
         } catch (err) {
           console.error(err);
           hideLoading();
-          alert("【データ取得失敗】\n" + err.message);
+          showError("データ取得失敗: " + err.message);
           showModal(true);
         }
       }
@@ -1216,8 +1238,8 @@
       
       var btnSaveSettings = document.getElementById('btn-save-settings');
       if(btnSaveSettings) btnSaveSettings.addEventListener('click', function() {
-        var newUrl = document.getElementById('ns-url').value;
-        var newToken = document.getElementById('ns-token').value;
+        var newUrl = document.getElementById('ns-url').value.trim();
+        var newToken = document.getElementById('ns-token').value.trim();
         var newTargetMode = document.getElementById('target-mode').value;
         var newPeriodWeeks = parseInt(document.getElementById('period-weeks').value, 10);
 
@@ -1249,9 +1271,7 @@
         if (requiresFetch || state.entries.length === 0) {
           fetchData();
         } else {
-          if (state.entries.length > 0) {
-             updateAllDashboards();
-          }
+          updateAllDashboards();
         }
       });
 
@@ -1326,11 +1346,6 @@
       }
     });
 
-    window.addEventListener('resize', function() {
-       Object.values(chartInstances).forEach(function(chart) {
-          if (chart) chart.resize();
-       });
-    });
   </script>
 </body>
 </html>

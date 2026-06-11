@@ -1,0 +1,1043 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Nightscout Insights Dashboard</title>
+
+  <!-- 安定性のためライブラリのバージョンを固定 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.294.0/dist/umd/lucide.min.js"></script>
+
+  <style>
+    :root {
+      --panel-bg: rgba(15, 23, 42, 0.9);
+      --panel-border: rgba(51, 65, 85, 0.8);
+    }
+    html, body {
+      margin: 0; padding: 0;
+      width: 100vw; min-height: 100dvh;
+      background: #020617;
+      color: #e2e8f0;
+      font-family: Inter, system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
+    }
+    .panel {
+      background-color: var(--panel-bg);
+      border-radius: 0.75rem;
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    .heatmap-grid {
+      display: grid;
+      grid-auto-flow: column;
+      grid-template-rows: repeat(7, minmax(0, 1fr));
+      grid-auto-columns: minmax(0, 1fr);
+      gap: 3px;
+      height: 100%;
+    }
+    .hm-cell {
+      border-radius: 3px;
+      cursor: pointer;
+      transition: transform .1s ease;
+      min-width: 6px;
+    }
+    .hm-cell:hover { transform: scale(1.15); outline: 2px solid #cbd5e1; z-index: 5; }
+    .hm-cell.hm-today { outline: 2px solid #60a5fa; }
+    .hm-spacer { visibility: hidden; }
+
+    .loader {
+      border: 4px solid rgba(255,255,255,0.1);
+      border-left-color: #3b82f6;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+
+<body class="flex flex-col select-none">
+  <header class="flex items-center justify-between px-2 sm:px-4 py-2 bg-slate-900 border-b border-slate-800 shadow-md flex-none z-10 gap-2 sticky top-0">
+    <div class="font-black text-lg text-purple-400 tracking-wide flex items-center gap-2 flex-none">
+      <i data-lucide="trending-up" class="w-5 h-5"></i> <span class="hidden sm:inline">Insights</span>
+    </div>
+    <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+      <!-- 他ダッシュボードへのリンク -->
+      <nav class="flex items-center gap-1 text-[10px] font-bold">
+        <a href="index.html" class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition">Monitor</a>
+        <a href="dashboard1.html" class="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-slate-400 hover:text-white transition">Stats</a>
+      </nav>
+
+      <div class="flex items-center bg-slate-800 rounded p-0.5 border border-slate-700 text-xs font-bold" id="header-period-controls">
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="4">4W</button>
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="8">8W</button>
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="12">12W</button>
+      </div>
+
+      <button id="btn-toggle-target" class="px-2 sm:px-3 py-1 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded text-sm font-bold shadow transition flex items-center gap-1.5 text-green-400">
+        <span id="header-target-label" class="tracking-wider">TIR</span> <i data-lucide="refresh-cw" class="w-3 h-3 text-slate-400"></i>
+      </button>
+      <button id="btn-refresh" aria-label="Reload data" class="p-1.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded shadow transition">
+        <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+      </button>
+      <button id="btn-open-settings" aria-label="Settings" class="p-1.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 rounded shadow transition">
+        <i data-lucide="settings" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-3 p-3">
+
+    <!-- 期間比較サマリー -->
+    <div class="panel lg:col-span-2 p-3">
+      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-2">
+        <i data-lucide="git-compare" class="w-4 h-4 text-purple-400"></i>Period Comparison
+        <span id="cmp-range" class="ml-auto text-[10px] font-bold text-slate-500">--</span>
+      </h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2.5 text-center">
+          <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1" id="cmp-tir-label">TIR</div>
+          <div class="text-2xl font-black text-green-400 leading-none" id="cmp-tir">--%</div>
+          <div class="text-[11px] font-bold mt-1.5" id="cmp-tir-delta">--</div>
+        </div>
+        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2.5 text-center">
+          <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">AVG BG</div>
+          <div class="text-2xl font-black text-white leading-none" id="cmp-avg">--</div>
+          <div class="text-[11px] font-bold mt-1.5" id="cmp-avg-delta">--</div>
+        </div>
+        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2.5 text-center">
+          <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">CV</div>
+          <div class="text-2xl font-black text-slate-200 leading-none" id="cmp-cv">--%</div>
+          <div class="text-[11px] font-bold mt-1.5" id="cmp-cv-delta">--</div>
+        </div>
+        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2.5 text-center">
+          <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Hypo Events</div>
+          <div class="text-2xl font-black text-red-400 leading-none" id="cmp-hypo">--</div>
+          <div class="text-[11px] font-bold mt-1.5" id="cmp-hypo-delta">--</div>
+        </div>
+      </div>
+      <div class="text-[9px] text-slate-500 mt-2 text-right">vs 前の同期間との比較。緑 = 改善 / 赤 = 悪化</div>
+    </div>
+
+    <!-- カレンダーヒートマップ -->
+    <div class="panel lg:col-span-2 p-3">
+      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-2">
+        <i data-lucide="calendar-days" class="w-4 h-4 text-emerald-400"></i>Daily Score Calendar
+        <span class="ml-1 text-[9px] text-slate-500 font-medium normal-case">タップで日別詳細</span>
+        <span id="hm-period-badge" class="ml-auto text-[9px] bg-purple-900/50 text-purple-300 px-1.5 py-0.5 rounded border border-purple-700/50">--W</span>
+      </h2>
+      <div class="flex gap-2" style="height: 150px;">
+        <div class="grid text-[9px] text-slate-500 font-bold text-center" style="grid-template-rows: repeat(7, minmax(0, 1fr)); gap: 3px;">
+          <span class="text-red-400/70">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span class="text-blue-400/70">土</span>
+        </div>
+        <div id="heatmap" class="heatmap-grid flex-1"></div>
+      </div>
+      <div class="flex items-center justify-end gap-1.5 mt-2 text-[9px] text-slate-500 font-bold">
+        <span>Score:</span>
+        <span class="inline-block w-3 h-3 rounded-sm" style="background:#ef4444"></span><span>&lt;50</span>
+        <span class="inline-block w-3 h-3 rounded-sm" style="background:#f97316"></span><span>50</span>
+        <span class="inline-block w-3 h-3 rounded-sm" style="background:#eab308"></span><span>60</span>
+        <span class="inline-block w-3 h-3 rounded-sm" style="background:#84cc16"></span><span>70</span>
+        <span class="inline-block w-3 h-3 rounded-sm" style="background:#22c55e"></span><span>80</span>
+        <span class="inline-block w-3 h-3 rounded-sm" style="background:#10b981"></span><span>90+</span>
+        <span class="inline-block w-3 h-3 rounded-sm ml-2" style="background:#334155"></span><span>データ不足</span>
+      </div>
+    </div>
+
+    <!-- 週次トレンド -->
+    <div class="panel p-3 flex flex-col">
+      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-2 flex-none">
+        <i data-lucide="bar-chart-3" class="w-4 h-4 text-blue-400"></i>Weekly Trend
+        <span class="ml-1 text-[9px] text-slate-500 font-medium normal-case">TIR内訳 + 平均血糖</span>
+      </h2>
+      <div class="flex-1 relative" style="min-height: 230px;">
+        <canvas id="weekly-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- 時間帯ホットスポット -->
+    <div class="panel p-3 flex flex-col">
+      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-2 flex-none">
+        <i data-lucide="clock" class="w-4 h-4 text-yellow-400"></i>Time-of-Day Hotspots
+        <span class="ml-1 text-[9px] text-slate-500 font-medium normal-case">上 = 高血糖% / 下 = 低血糖%</span>
+      </h2>
+      <div class="flex-1 relative" style="min-height: 230px;">
+        <canvas id="hotspot-chart"></canvas>
+      </div>
+    </div>
+
+    <!-- 低血糖イベントログ -->
+    <div class="panel lg:col-span-2 p-3">
+      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 border-b border-slate-700 pb-2">
+        <i data-lucide="alert-octagon" class="w-4 h-4 text-red-400"></i>Hypoglycemia Events
+        <span class="ml-1 text-[9px] text-slate-500 font-medium normal-case">70 mg/dL未満が15分以上</span>
+        <span id="hypo-summary" class="ml-auto text-[10px] font-bold text-slate-400">--</span>
+      </h2>
+      <div id="hypo-list" class="max-h-64 overflow-y-auto divide-y divide-slate-800"></div>
+    </div>
+  </main>
+
+  <!-- 日別詳細モーダル -->
+  <div id="day-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+    <div class="bg-slate-800 rounded-xl max-w-2xl w-full p-4 shadow-2xl border border-slate-600 flex flex-col" style="max-height: 90dvh;">
+      <div class="flex items-center justify-between mb-3 border-b border-slate-700 pb-2 flex-none">
+        <h2 class="text-lg font-black text-white tracking-wide" id="day-modal-title">--/--</h2>
+        <button id="btn-close-day" aria-label="Close" class="text-slate-400 hover:text-white p-1 rounded transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <div class="grid grid-cols-3 sm:grid-cols-6 gap-2 mb-3 flex-none">
+        <div class="bg-slate-900/60 rounded p-2 text-center"><div class="text-[9px] text-slate-400 font-bold uppercase" id="day-tir-label">TIR</div><div class="text-base font-black text-green-400" id="day-tir">--%</div></div>
+        <div class="bg-slate-900/60 rounded p-2 text-center"><div class="text-[9px] text-slate-400 font-bold uppercase">Score</div><div class="text-base font-black text-emerald-300" id="day-score">--</div></div>
+        <div class="bg-slate-900/60 rounded p-2 text-center"><div class="text-[9px] text-slate-400 font-bold uppercase">AVG</div><div class="text-base font-black text-white" id="day-avg">--</div></div>
+        <div class="bg-slate-900/60 rounded p-2 text-center"><div class="text-[9px] text-slate-400 font-bold uppercase">CV</div><div class="text-base font-black text-slate-300" id="day-cv">--%</div></div>
+        <div class="bg-slate-900/60 rounded p-2 text-center"><div class="text-[9px] text-slate-400 font-bold uppercase">Carbs</div><div class="text-base font-black text-yellow-400" id="day-carbs">--g</div></div>
+        <div class="bg-slate-900/60 rounded p-2 text-center"><div class="text-[9px] text-slate-400 font-bold uppercase">Bolus</div><div class="text-base font-black text-cyan-400" id="day-bolus">--U</div></div>
+      </div>
+      <div class="flex h-3 rounded-full overflow-hidden bg-slate-900 border border-slate-700 mb-3 flex-none">
+        <div id="day-bar-tbr" class="bg-red-500 h-full transition-all"></div>
+        <div id="day-bar-tir" class="bg-green-500 h-full transition-all"></div>
+        <div id="day-bar-tar" class="bg-yellow-500 h-full transition-all"></div>
+      </div>
+      <div class="flex-1 relative" style="min-height: 240px;">
+        <canvas id="day-chart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/70 backdrop-blur-sm">
+    <div class="bg-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl border border-slate-600 m-4">
+      <h2 class="text-xl font-black mb-5 text-white tracking-wide border-b border-slate-700 pb-2 flex items-center gap-2">
+        <i data-lucide="settings" class="w-5 h-5 text-purple-400"></i> Insights Settings
+      </h2>
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Nightscout URL</label>
+          <input type="text" id="ns-url" placeholder="https://your-site.example.com" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition font-medium">
+        </div>
+        <div>
+          <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Read Token <span class="text-slate-500 lowercase normal-case">(optional)</span></label>
+          <input type="password" id="ns-token" placeholder="subject-xxxxxxxxxxxxxxxx" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition font-medium">
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Target Mode</label>
+            <select id="target-mode" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 font-bold cursor-pointer appearance-none">
+              <option value="tir">TIR (70-180)</option>
+              <option value="titr">TITR (70-140)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Analysis Period</label>
+            <select id="period-weeks" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-purple-500 font-bold cursor-pointer appearance-none">
+              <option value="4" selected>4 Weeks</option>
+              <option value="8">8 Weeks</option>
+              <option value="12">12 Weeks</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="mt-8 flex justify-end gap-3">
+        <button id="btn-close-settings" class="px-4 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-700 transition font-bold hidden">Cancel</button>
+        <button id="btn-save-settings" class="px-5 py-2 bg-purple-600 hover:bg-purple-500 text-white text-sm rounded-lg transition font-black shadow-lg">Fetch &amp; Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Toast -->
+  <div id="error-toast" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-[70] hidden max-w-sm w-full mx-4">
+    <div class="bg-red-900 border border-red-600 rounded-lg p-4 shadow-2xl flex items-start gap-3">
+      <i data-lucide="alert-triangle" class="w-5 h-5 text-red-400 flex-none mt-0.5"></i>
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-black text-red-200 mb-1">Error</div>
+        <div id="error-toast-msg" class="text-xs text-red-300 leading-relaxed break-words"></div>
+      </div>
+      <button onclick="document.getElementById('error-toast').classList.add('hidden')" aria-label="Dismiss" class="text-red-400 hover:text-red-200 flex-none ml-1">
+        <i data-lucide="x" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="fixed inset-0 z-[60] bg-slate-950/90 flex-col items-center justify-center hidden">
+    <div class="loader mb-6"></div>
+    <div class="text-white text-lg font-black tracking-widest uppercase mb-2">Fetching Data</div>
+    <div class="text-slate-400 text-sm font-bold text-center px-4 max-w-sm">
+      Downloading up to 24 weeks of historical data.<br>This may take a few moments.
+    </div>
+  </div>
+
+  <script>
+    var chartInstances = {};
+
+    window.addEventListener('resize', function() {
+      Object.values(chartInstances).forEach(function(chart) {
+        if (chart) chart.resize();
+      });
+    });
+
+    window.addEventListener('DOMContentLoaded', function() {
+
+      // --- State(localStorage キーは index.html / dashboard1.html と共有) ---
+      var savedUrl = '', savedToken = '', savedTargetMode = 'tir', savedPeriodWeeks = 4;
+      try {
+        savedUrl = localStorage.getItem('ns_url') || '';
+        savedToken = localStorage.getItem('ns_token') || '';
+        savedTargetMode = localStorage.getItem('ns_targetMode') || 'tir';
+        savedPeriodWeeks = parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10);
+      } catch(e) {
+        console.warn('localStorage accessibility issue.');
+      }
+
+      var state = {
+        url: savedUrl,
+        token: savedToken,
+        targetMode: savedTargetMode,
+        periodWeeks: savedPeriodWeeks,
+        entries: [],
+        dayIndex: {},   // 'YYYY-MM-DD' -> { entries: [], carbs: 0, bolus: 0 }
+        dataEndDate: null
+      };
+
+      var WEEKDAY_JP = ['日', '月', '火', '水', '木', '金', '土'];
+
+      // --- Helpers ---
+      var safeSetText = function(id, text) { var el = document.getElementById(id); if (el) el.textContent = text; };
+
+      var errorToastTimer = null;
+      function showError(msg) {
+        var toast = document.getElementById('error-toast');
+        var msgEl = document.getElementById('error-toast-msg');
+        if (!toast || !msgEl) { console.error(msg); return; }
+        msgEl.textContent = msg;
+        toast.classList.remove('hidden');
+        if (errorToastTimer) clearTimeout(errorToastTimer);
+        errorToastTimer = setTimeout(function() { toast.classList.add('hidden'); }, 8000);
+      }
+
+      function showModal(force) {
+        document.getElementById('ns-url').value = state.url;
+        document.getElementById('ns-token').value = state.token;
+        document.getElementById('target-mode').value = state.targetMode;
+        document.getElementById('period-weeks').value = state.periodWeeks.toString();
+        var btnClose = document.getElementById('btn-close-settings');
+        if (force) btnClose.classList.add('hidden');
+        else btnClose.classList.remove('hidden');
+        var modal = document.getElementById('settings-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+
+      function hideModal() {
+        var modal = document.getElementById('settings-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+
+      function showLoading() {
+        var el = document.getElementById('loading-overlay');
+        el.classList.remove('hidden');
+        el.classList.add('flex');
+      }
+
+      function hideLoading() {
+        var el = document.getElementById('loading-overlay');
+        el.classList.add('hidden');
+        el.classList.remove('flex');
+      }
+
+      function startOfDay(ms) {
+        var d = new Date(ms);
+        return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      }
+
+      function addDays(date, n) {
+        return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+      }
+
+      function dateKeyOf(ms) {
+        var d = new Date(ms);
+        return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      }
+
+      function parseDateKey(key) {
+        var p = key.split('-');
+        return new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+      }
+
+      function formatShortDate(ms) {
+        var d = new Date(ms);
+        return String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+      }
+
+      function formatTime(ms) {
+        var d = new Date(ms);
+        return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      }
+
+      function targetMax() { return state.targetMode === 'titr' ? 140 : 180; }
+      function targetLabel() { return state.targetMode === 'titr' ? 'TITR' : 'TIR'; }
+
+      // --- Statistics(dashboard1.html とスコア式を統一) ---
+      function computeStats(values) {
+        var total = values.length;
+        if (!total) return null;
+        var tMax = targetMax();
+        var tbr54 = 0, tbr70 = 0, tir = 0, tar = 0, tar250 = 0, pH = 0, sum = 0;
+        for (var i = 0; i < total; i++) {
+          var v = values[i];
+          sum += v;
+          if (v < 54) tbr54++;
+          else if (v < 70) tbr70++;
+          else if (v <= tMax) tir++;
+          else tar++;
+          if (v > 250) tar250++;
+          if (v > 140 && v <= 250) pH++;
+        }
+        tbr54 = tbr54 / total * 100;
+        tbr70 = tbr70 / total * 100;
+        tir = tir / total * 100;
+        tar = tar / total * 100;
+        tar250 = tar250 / total * 100;
+        pH = pH / total * 100;
+
+        var score = tir - (5 * tbr54) - (2 * tbr70) - (1 * tar250);
+        if (state.targetMode === 'titr') score -= 0.5 * pH;
+        score = Math.max(0, Math.min(100, score));
+
+        var mean = sum / total;
+        var sqSum = 0;
+        for (var j = 0; j < total; j++) sqSum += Math.pow(values[j] - mean, 2);
+        var sd = Math.sqrt(sqSum / total);
+        var cv = mean > 0 ? (sd / mean) * 100 : 0;
+        var gmi = 3.31 + 0.02392 * mean;
+
+        return { count: total, tbr: tbr54 + tbr70, tir: tir, tar: tar, score: score, mean: mean, cv: cv, gmi: gmi };
+      }
+
+      function entriesInRange(startMs, endMs) {
+        return state.entries.filter(function(e) { return e.date >= startMs && e.date <= endMs; });
+      }
+
+      function statsForRange(startMs, endMs) {
+        return computeStats(entriesInRange(startMs, endMs).map(function(e) { return e.sgv; }));
+      }
+
+      // 低血糖エピソード検出: 70未満が継続(読み取り間隔30分超のギャップで分割)、15分以上のもの
+      function detectHypoEpisodes(startMs, endMs) {
+        var episodes = [];
+        var cur = null;
+        var GAP_MS = 30 * 60 * 1000;
+        var READ_SPAN_MS = 5 * 60 * 1000;
+
+        function finalize() {
+          if (!cur) return;
+          var duration = cur.lastMs - cur.startMs + READ_SPAN_MS;
+          if (duration >= 15 * 60 * 1000) {
+            episodes.push({ start: cur.startMs, end: cur.lastMs, durationMin: Math.round(duration / 60000), nadir: cur.nadir });
+          }
+          cur = null;
+        }
+
+        for (var i = 0; i < state.entries.length; i++) {
+          var e = state.entries[i];
+          if (e.date < startMs || e.date > endMs) continue;
+          if (e.sgv < 70) {
+            if (cur && e.date - cur.lastMs > GAP_MS) finalize();
+            if (!cur) cur = { startMs: e.date, lastMs: e.date, nadir: e.sgv };
+            else {
+              cur.lastMs = e.date;
+              if (e.sgv < cur.nadir) cur.nadir = e.sgv;
+            }
+          } else {
+            finalize();
+          }
+        }
+        finalize();
+        return episodes;
+      }
+
+      // --- Data Fetch(Nightscout API v1: トークンは ?token= クエリパラメータ必須) ---
+      async function fetchData() {
+        var urlBase = state.url.trim().replace(/\/$/, '');
+        if (!urlBase) {
+          showError('Nightscout URL が入力されていません。Settings から設定してください。');
+          showModal(true);
+          return;
+        }
+        if (window.location.protocol === 'https:' && urlBase.startsWith('http:')) {
+          showError('Mixed Content 警告: HTTPS ページから HTTP の Nightscout へはアクセスできません。URL を https:// に変更してください。');
+          return;
+        }
+
+        showLoading();
+
+        var now = new Date();
+        var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        // 12週 + 前期間比較用に同じ長さ = 最大24週分
+        var totalDays = 12 * 7 * 2;
+        var startDate = new Date(endDate.getTime() - totalDays * 86400000 + 1);
+
+        var buildQs = function(path, dateField) {
+          var base = urlBase + path + '?find[' + dateField + '][$gte]=' + startDate.toISOString() + '&find[' + dateField + '][$lte]=' + endDate.toISOString() + '&count=100000';
+          if (state.token) base += '&token=' + encodeURIComponent(state.token);
+          return base;
+        };
+
+        var fetchWithCheck = async function(url) {
+          var res = await fetch(url, { headers: { Accept: 'application/json' } }).catch(function(e) {
+            throw new Error('ネットワーク接続失敗。CORS設定またはURLを確認してください。(' + e.message + ')');
+          });
+          if (!res.ok) throw new Error('サーバーエラー: HTTP ' + res.status);
+          return res.json();
+        };
+
+        try {
+          var results = await Promise.all([
+            fetchWithCheck(buildQs('/api/v1/entries.json', 'dateString')),
+            fetchWithCheck(buildQs('/api/v1/treatments.json', 'created_at'))
+          ]);
+          var rawEntries = results[0];
+          var rawTreats = results[1];
+
+          state.entries = rawEntries.map(function(d) {
+            var val = d.sgv !== undefined ? d.sgv : (d.glucose !== undefined ? d.glucose : d.value);
+            return { date: new Date(d.dateString || d.date).getTime(), sgv: Number(val) };
+          }).filter(function(d) {
+            return Number.isFinite(d.sgv) && d.sgv > 0 && Number.isFinite(d.date);
+          }).sort(function(a, b) { return a.date - b.date; });
+
+          buildDayIndex(Array.isArray(rawTreats) ? rawTreats : []);
+          state.dataEndDate = endDate.getTime();
+
+          hideLoading();
+          hideModal();
+          renderAll();
+        } catch (err) {
+          console.error(err);
+          hideLoading();
+          showError('データ取得失敗: ' + err.message);
+          showModal(true);
+        }
+      }
+
+      function buildDayIndex(rawTreats) {
+        state.dayIndex = {};
+        state.entries.forEach(function(e) {
+          var k = dateKeyOf(e.date);
+          if (!state.dayIndex[k]) state.dayIndex[k] = { entries: [], carbs: 0, bolus: 0 };
+          state.dayIndex[k].entries.push(e);
+        });
+        rawTreats.forEach(function(t) {
+          var raw = t.created_at !== undefined ? t.created_at : t.date;
+          var ms = typeof raw === 'number' ? raw : new Date(raw).getTime();
+          if (!Number.isFinite(ms)) return;
+          var day = state.dayIndex[dateKeyOf(ms)];
+          if (!day) return;
+          var carbs = Number(t.carbs || 0);
+          if (Number.isFinite(carbs) && carbs > 0) day.carbs += carbs;
+          var insulin = Number(t.insulin || 0);
+          if (!Number.isFinite(insulin) || insulin <= 0) return;
+          var type = (t.eventType || '').toLowerCase();
+          if (type.includes('temp basal') || type.includes('profile')) return;
+          day.bolus += insulin;
+        });
+      }
+
+      // --- Render: 全パネル ---
+      function periodRange() {
+        var todayStart = startOfDay(state.dataEndDate || Date.now());
+        var days = state.periodWeeks * 7;
+        var first = addDays(todayStart, -(days - 1));
+        return { firstMs: first.getTime(), endMs: state.dataEndDate || Date.now(), days: days, todayStart: todayStart };
+      }
+
+      function renderAll() {
+        if (!state.entries.length) {
+          showError('表示できるデータがありません。期間内に CGM データが存在するか確認してください。');
+          return;
+        }
+        renderComparison();
+        renderHeatmap();
+        renderWeeklyTrend();
+        renderHotspots();
+        renderHypoList();
+      }
+
+      // --- 期間比較サマリー ---
+      function setDelta(id, delta, goodWhenNegative, unit, neutral) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        if (delta === null) { el.textContent = '--'; el.className = 'text-[11px] font-bold mt-1.5 text-slate-500'; return; }
+        var arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '―');
+        var sign = delta > 0 ? '+' : '';
+        el.textContent = arrow + ' ' + sign + (Math.round(delta * 10) / 10) + (unit || '');
+        var color = 'text-slate-400';
+        if (!neutral && delta !== 0) {
+          var improved = goodWhenNegative ? delta < 0 : delta > 0;
+          color = improved ? 'text-green-400' : 'text-red-400';
+        }
+        el.className = 'text-[11px] font-bold mt-1.5 ' + color;
+      }
+
+      function renderComparison() {
+        var pr = periodRange();
+        var prevEnd = pr.firstMs - 1;
+        var prevStart = pr.firstMs - pr.days * 86400000;
+
+        var cur = statsForRange(pr.firstMs, pr.endMs);
+        var prev = statsForRange(prevStart, prevEnd);
+        var curHypo = detectHypoEpisodes(pr.firstMs, pr.endMs).length;
+        var prevHypo = prev ? detectHypoEpisodes(prevStart, prevEnd).length : null;
+
+        safeSetText('cmp-range', formatShortDate(pr.firstMs) + ' - ' + formatShortDate(pr.endMs) + ' (' + state.periodWeeks + 'W)');
+        safeSetText('cmp-tir-label', targetLabel());
+
+        if (!cur) {
+          safeSetText('cmp-tir', '--%'); safeSetText('cmp-avg', '--');
+          safeSetText('cmp-cv', '--%'); safeSetText('cmp-hypo', '--');
+          return;
+        }
+
+        safeSetText('cmp-tir', cur.tir.toFixed(1) + '%');
+        safeSetText('cmp-avg', Math.round(cur.mean).toString());
+        safeSetText('cmp-cv', Math.round(cur.cv) + '%');
+        safeSetText('cmp-hypo', curHypo.toString());
+
+        setDelta('cmp-tir-delta', prev ? cur.tir - prev.tir : null, false, '%');
+        setDelta('cmp-avg-delta', prev ? cur.mean - prev.mean : null, false, '', true);
+        setDelta('cmp-cv-delta', prev ? cur.cv - prev.cv : null, true, '%');
+        setDelta('cmp-hypo-delta', prevHypo !== null ? curHypo - prevHypo : null, true, '');
+      }
+
+      // --- カレンダーヒートマップ ---
+      function scoreColor(score) {
+        if (score >= 90) return '#10b981';
+        if (score >= 80) return '#22c55e';
+        if (score >= 70) return '#84cc16';
+        if (score >= 60) return '#eab308';
+        if (score >= 50) return '#f97316';
+        return '#ef4444';
+      }
+
+      function renderHeatmap() {
+        var container = document.getElementById('heatmap');
+        if (!container) return;
+        container.innerHTML = '';
+
+        var pr = periodRange();
+        safeSetText('hm-period-badge', state.periodWeeks + 'W');
+
+        var firstDate = new Date(pr.firstMs);
+        // 列頭を日曜に揃える(GitHub 草スタイル)
+        var gridStart = addDays(firstDate, -firstDate.getDay());
+        var todayKey = dateKeyOf(pr.todayStart.getTime());
+
+        for (var d = gridStart; d.getTime() <= pr.todayStart.getTime(); d = addDays(d, 1)) {
+          var cell = document.createElement('div');
+          if (d.getTime() < pr.firstMs) {
+            cell.className = 'hm-cell hm-spacer';
+            container.appendChild(cell);
+            continue;
+          }
+          var key = dateKeyOf(d.getTime());
+          var day = state.dayIndex[key];
+          var stats = day ? computeStats(day.entries.map(function(e) { return e.sgv; })) : null;
+          var sufficient = stats && stats.count >= 24; // 2時間分以上
+
+          cell.className = 'hm-cell' + (key === todayKey ? ' hm-today' : '');
+          cell.style.backgroundColor = sufficient ? scoreColor(stats.score) : '#334155';
+
+          var label = formatShortDate(d.getTime()) + ' (' + WEEKDAY_JP[d.getDay()] + ')';
+          if (sufficient) {
+            cell.title = label + '  Score ' + Math.round(stats.score) + ' / ' + targetLabel() + ' ' + Math.round(stats.tir) + '% / AVG ' + Math.round(stats.mean);
+          } else {
+            cell.title = label + '  データ不足';
+          }
+
+          if (day && day.entries.length) {
+            (function(k) {
+              cell.addEventListener('click', function() { openDayDetail(k); });
+            })(key);
+          } else {
+            cell.style.cursor = 'default';
+          }
+          container.appendChild(cell);
+        }
+      }
+
+      // --- 週次トレンド ---
+      function renderWeeklyTrend() {
+        var canvas = document.getElementById('weekly-chart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        var pr = periodRange();
+        var labels = [], tbrArr = [], tirArr = [], tarArr = [], avgArr = [];
+
+        for (var w = 0; w < state.periodWeeks; w++) {
+          var ws = addDays(new Date(pr.firstMs), w * 7);
+          var weekStartMs = ws.getTime();
+          var weekEndMs = Math.min(addDays(ws, 7).getTime() - 1, pr.endMs);
+          var stats = statsForRange(weekStartMs, weekEndMs);
+          labels.push(formatShortDate(weekStartMs));
+          if (stats) {
+            tbrArr.push(stats.tbr); tirArr.push(stats.tir); tarArr.push(stats.tar);
+            avgArr.push(Math.round(stats.mean));
+          } else {
+            tbrArr.push(0); tirArr.push(0); tarArr.push(0); avgArr.push(null);
+          }
+        }
+
+        if (chartInstances['weekly-chart']) chartInstances['weekly-chart'].destroy();
+        chartInstances['weekly-chart'] = new Chart(canvas.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              { label: 'Low', data: tbrArr, backgroundColor: '#ef4444', stack: 'tir' },
+              { label: 'In Range', data: tirArr, backgroundColor: '#22c55e', stack: 'tir' },
+              { label: 'High', data: tarArr, backgroundColor: '#eab308', stack: 'tir' },
+              { type: 'line', label: 'Avg BG', data: avgArr, borderColor: '#60a5fa', backgroundColor: '#60a5fa', yAxisID: 'y2', tension: 0.3, pointRadius: 3, borderWidth: 2 }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: {
+              legend: { display: true, labels: { boxWidth: 10, font: { size: 9, weight: 'bold' } } },
+              tooltip: {
+                callbacks: {
+                  label: function(ctx) {
+                    if (ctx.dataset.yAxisID === 'y2') return ctx.dataset.label + ': ' + ctx.parsed.y + ' mg/dL';
+                    return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(1) + '%';
+                  }
+                }
+              }
+            },
+            scales: {
+              x: { stacked: true, grid: { display: false }, ticks: { font: { size: 9, weight: 'bold' } } },
+              y: {
+                stacked: true, min: 0, max: 100,
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                ticks: { callback: function(v) { return v + '%'; }, font: { size: 9 } }
+              },
+              y2: {
+                position: 'right', suggestedMin: 80, suggestedMax: 220,
+                grid: { display: false },
+                ticks: { color: '#60a5fa', font: { size: 9, weight: 'bold' } }
+              }
+            }
+          }
+        });
+      }
+
+      // --- 時間帯ホットスポット ---
+      function renderHotspots() {
+        var canvas = document.getElementById('hotspot-chart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        var pr = periodRange();
+        var entries = entriesInRange(pr.firstMs, pr.endMs);
+        var tMax = targetMax();
+
+        var hourTotal = new Array(24).fill(0);
+        var hourLow = new Array(24).fill(0);
+        var hourHigh = new Array(24).fill(0);
+        entries.forEach(function(e) {
+          var h = new Date(e.date).getHours();
+          hourTotal[h]++;
+          if (e.sgv < 70) hourLow[h]++;
+          else if (e.sgv > tMax) hourHigh[h]++;
+        });
+
+        var lows = [], highs = [];
+        for (var h = 0; h < 24; h++) {
+          if (hourTotal[h] === 0) { lows.push(0); highs.push(0); continue; }
+          lows.push(-(hourLow[h] / hourTotal[h] * 100));
+          highs.push(hourHigh[h] / hourTotal[h] * 100);
+        }
+
+        if (chartInstances['hotspot-chart']) chartInstances['hotspot-chart'].destroy();
+        chartInstances['hotspot-chart'] = new Chart(canvas.getContext('2d'), {
+          type: 'bar',
+          data: {
+            labels: Array.from({ length: 24 }, function(_, i) { return i + ':00'; }),
+            datasets: [
+              { label: 'High %', data: highs, backgroundColor: '#eab308', stack: 'hs' },
+              { label: 'Low %', data: lows, backgroundColor: '#ef4444', stack: 'hs' }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: {
+              legend: { display: true, labels: { boxWidth: 10, font: { size: 9, weight: 'bold' } } },
+              tooltip: {
+                callbacks: {
+                  label: function(ctx) { return ctx.dataset.label.replace(' %', '') + ': ' + Math.abs(ctx.parsed.y).toFixed(1) + '%'; }
+                }
+              }
+            },
+            scales: {
+              x: { stacked: true, grid: { display: false }, ticks: { font: { size: 8, weight: 'bold' }, maxRotation: 0, autoSkip: true } },
+              y: {
+                stacked: true,
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                ticks: { callback: function(v) { return Math.abs(v) + '%'; }, font: { size: 9 } }
+              }
+            }
+          }
+        });
+      }
+
+      // --- 低血糖イベントログ ---
+      function renderHypoList() {
+        var listEl = document.getElementById('hypo-list');
+        if (!listEl) return;
+        listEl.innerHTML = '';
+
+        var pr = periodRange();
+        var episodes = detectHypoEpisodes(pr.firstMs, pr.endMs);
+
+        if (!episodes.length) {
+          safeSetText('hypo-summary', '0 events');
+          var empty = document.createElement('div');
+          empty.className = 'py-6 text-center text-sm font-bold text-green-400';
+          empty.textContent = '期間内に低血糖イベントはありません 🎉';
+          listEl.appendChild(empty);
+          return;
+        }
+
+        var totalMin = episodes.reduce(function(a, ep) { return a + ep.durationMin; }, 0);
+        var perWeek = (episodes.length / state.periodWeeks).toFixed(1);
+        safeSetText('hypo-summary', episodes.length + ' events / 平均 ' + Math.round(totalMin / episodes.length) + '分 / 週 ' + perWeek + '回');
+
+        episodes.slice().reverse().forEach(function(ep) {
+          var severe = ep.nadir < 54;
+          var row = document.createElement('div');
+          row.className = 'flex items-center gap-3 py-2 px-1 text-xs';
+
+          var badge = document.createElement('span');
+          badge.className = 'flex-none px-1.5 py-0.5 rounded text-[9px] font-black ' + (severe ? 'bg-red-900 text-red-300 border border-red-600' : 'bg-orange-900/60 text-orange-300 border border-orange-700');
+          badge.textContent = severe ? 'URGENT' : 'LOW';
+
+          var date = document.createElement('span');
+          date.className = 'flex-none font-black text-slate-200 w-16';
+          var d = new Date(ep.start);
+          date.textContent = formatShortDate(ep.start) + ' (' + WEEKDAY_JP[d.getDay()] + ')';
+
+          var time = document.createElement('span');
+          time.className = 'flex-none font-bold text-slate-400 w-24';
+          time.textContent = formatTime(ep.start) + ' - ' + formatTime(ep.end);
+
+          var dur = document.createElement('span');
+          dur.className = 'flex-none font-bold text-slate-300 w-14 text-right';
+          dur.textContent = ep.durationMin + '分';
+
+          var nadir = document.createElement('span');
+          nadir.className = 'flex-1 font-black text-right ' + (severe ? 'text-red-400' : 'text-orange-400');
+          nadir.textContent = '最低 ' + ep.nadir + ' mg/dL';
+
+          row.appendChild(badge); row.appendChild(date); row.appendChild(time); row.appendChild(dur); row.appendChild(nadir);
+          listEl.appendChild(row);
+        });
+      }
+
+      // --- 日別詳細モーダル ---
+      function openDayDetail(key) {
+        var day = state.dayIndex[key];
+        if (!day || !day.entries.length) return;
+
+        var dayDate = parseDateKey(key);
+        var dayStartMs = dayDate.getTime();
+        var dayEndMs = addDays(dayDate, 1).getTime() - 1;
+        var stats = computeStats(day.entries.map(function(e) { return e.sgv; }));
+
+        safeSetText('day-modal-title', formatShortDate(dayStartMs) + ' (' + WEEKDAY_JP[dayDate.getDay()] + ')');
+        safeSetText('day-tir-label', targetLabel());
+        safeSetText('day-tir', stats ? Math.round(stats.tir) + '%' : '--%');
+        safeSetText('day-score', stats ? Math.round(stats.score).toString() : '--');
+        safeSetText('day-avg', stats ? Math.round(stats.mean).toString() : '--');
+        safeSetText('day-cv', stats ? Math.round(stats.cv) + '%' : '--%');
+        safeSetText('day-carbs', Math.round(day.carbs) + 'g');
+        safeSetText('day-bolus', day.bolus.toFixed(1) + 'U');
+
+        if (stats) {
+          document.getElementById('day-bar-tbr').style.width = stats.tbr + '%';
+          document.getElementById('day-bar-tir').style.width = stats.tir + '%';
+          document.getElementById('day-bar-tar').style.width = stats.tar + '%';
+        }
+
+        var modal = document.getElementById('day-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        renderDayChart(day.entries, dayStartMs, dayEndMs);
+      }
+
+      function closeDayDetail() {
+        var modal = document.getElementById('day-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        if (chartInstances['day-chart']) {
+          chartInstances['day-chart'].destroy();
+          delete chartInstances['day-chart'];
+        }
+      }
+
+      function renderDayChart(entries, timeStart, timeEnd) {
+        var canvas = document.getElementById('day-chart');
+        if (!canvas || typeof Chart === 'undefined') return;
+
+        var tMax = targetMax();
+        var dataPoints = entries.map(function(e) { return { x: e.date, y: e.sgv }; });
+        var maxY = dataPoints.reduce(function(a, p) { return Math.max(a, p.y); }, 180);
+
+        if (chartInstances['day-chart']) chartInstances['day-chart'].destroy();
+        chartInstances['day-chart'] = new Chart(canvas.getContext('2d'), {
+          type: 'scatter',
+          data: {
+            datasets: [{
+              data: dataPoints,
+              backgroundColor: function(ctx) {
+                var y = ctx.raw && ctx.raw.y;
+                if (y < 70) return '#f87171';
+                if (y > tMax) return '#facc15';
+                return '#4ade80';
+              },
+              pointRadius: 2.5,
+              borderWidth: 0
+            }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: {
+              legend: { display: false }, tooltip: { enabled: false },
+              annotation: {
+                annotations: {
+                  target: { type: 'box', yMin: 70, yMax: tMax, backgroundColor: 'rgba(74, 222, 128, 0.08)', borderWidth: 0, drawTime: 'beforeDatasetsDraw' }
+                }
+              }
+            },
+            scales: {
+              x: {
+                type: 'time', min: timeStart, max: timeEnd,
+                time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                ticks: { font: { size: 9, weight: 'bold' } }
+              },
+              y: {
+                min: 40, max: Math.max(250, maxY + 20),
+                grid: { color: 'rgba(51,65,85,0.4)' },
+                ticks: { font: { size: 9 } }
+              }
+            }
+          }
+        });
+      }
+
+      // --- UI 状態同期 ---
+      function updateTargetToggleUI() {
+        safeSetText('header-target-label', state.targetMode.toUpperCase());
+        var select = document.getElementById('target-mode');
+        if (select) select.value = state.targetMode;
+      }
+
+      function updatePeriodToggleUI() {
+        var select = document.getElementById('period-weeks');
+        if (select) select.value = state.periodWeeks.toString();
+        document.querySelectorAll('.period-btn').forEach(function(btn) {
+          var w = parseInt(btn.dataset.weeks, 10);
+          if (w === state.periodWeeks) {
+            btn.classList.add('bg-slate-600', 'text-white', 'shadow');
+            btn.classList.remove('text-slate-300', 'hover:text-white');
+          } else {
+            btn.classList.remove('bg-slate-600', 'text-white', 'shadow');
+            btn.classList.add('text-slate-300', 'hover:text-white');
+          }
+        });
+      }
+
+      // --- Event Listeners ---
+      document.getElementById('btn-open-settings').addEventListener('click', function() { showModal(false); });
+      document.getElementById('btn-close-settings').addEventListener('click', hideModal);
+      document.getElementById('btn-refresh').addEventListener('click', fetchData);
+      document.getElementById('btn-close-day').addEventListener('click', closeDayDetail);
+      document.getElementById('day-modal').addEventListener('click', function(e) {
+        if (e.target === this) closeDayDetail();
+      });
+
+      document.getElementById('btn-save-settings').addEventListener('click', function() {
+        var newUrl = document.getElementById('ns-url').value.trim();
+        var newToken = document.getElementById('ns-token').value.trim();
+        var newTargetMode = document.getElementById('target-mode').value;
+        var newPeriodWeeks = parseInt(document.getElementById('period-weeks').value, 10);
+
+        var requiresFetch = (state.url !== newUrl) || (state.token !== newToken);
+
+        state.url = newUrl;
+        state.token = newToken;
+        state.targetMode = newTargetMode;
+        state.periodWeeks = newPeriodWeeks;
+
+        try {
+          localStorage.setItem('ns_url', state.url);
+          localStorage.setItem('ns_token', state.token);
+          localStorage.setItem('ns_targetMode', state.targetMode);
+          localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString());
+        } catch(e) {
+          console.warn('Could not write to localStorage.');
+        }
+
+        updateTargetToggleUI();
+        updatePeriodToggleUI();
+        hideModal();
+
+        if (requiresFetch || !state.entries.length) fetchData();
+        else renderAll();
+      });
+
+      document.getElementById('btn-toggle-target').addEventListener('click', function() {
+        state.targetMode = state.targetMode === 'tir' ? 'titr' : 'tir';
+        try { localStorage.setItem('ns_targetMode', state.targetMode); } catch(e) {}
+        updateTargetToggleUI();
+        if (state.entries.length) renderAll();
+      });
+
+      document.querySelectorAll('.period-btn').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          var newWeeks = parseInt(e.currentTarget.dataset.weeks, 10);
+          if (state.periodWeeks === newWeeks) return;
+          state.periodWeeks = newWeeks;
+          try { localStorage.setItem('ns_periodWeeks', state.periodWeeks.toString()); } catch(e) {}
+          updatePeriodToggleUI();
+          if (state.entries.length) renderAll();
+        });
+      });
+
+      // --- Kickstart ---
+      if (typeof Chart !== 'undefined') {
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.font.family = 'Inter, sans-serif';
+      }
+      if (typeof lucide !== 'undefined') lucide.createIcons();
+
+      updateTargetToggleUI();
+      updatePeriodToggleUI();
+
+      if (!state.url) showModal(true);
+      else fetchData();
+    });
+  </script>
+</body>
+</html>
