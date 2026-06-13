@@ -655,6 +655,7 @@
       DELTA_LOOKBACK_MINUTES: 20,
       DEVICESTATUS_LOOKBACK_HOURS_FULL: 24,
       DEVICESTATUS_LOOKBACK_HOURS_DELTA: 3,
+      FETCH_TIMEOUT_MS: 30 * 1000,
       REFRESH_INTERVAL_MS: 3 * 60 * 1000,
       AGP_REFRESH_INTERVAL_MS: 15 * 60 * 1000,
       DATA_RETENTION_DAYS: 8,
@@ -736,13 +737,13 @@
 
       safeSetText('last-update-time', `Loading ${key}`);
 
-      const deviceData = await fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
-        'find[created_at][$gte]': start.toISOString(),
-        'find[created_at][$lt]': end.toISOString(),
-        count: 3000
-      }));
+      try {
+        const deviceData = await fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
+          'find[created_at][$gte]': start.toISOString(),
+          'find[created_at][$lt]': end.toISOString(),
+          count: 3000
+        }));
 
-      if (Array.isArray(deviceData)) {
         state.data.devicestatus = mergeByKey(
           state.data.devicestatus,
           deviceData,
@@ -751,11 +752,13 @@
 
         state.loadedDeviceStatusDays.add(key);
         hideError();
-      } else {
+      } catch (error) {
+        console.error('Device status history fetch failed:', error);
         showError(`Failed to load IOB for ${key}`);
+      } finally {
+        // 「Loading YYYY-MM-DD」表示を経過時間表示に戻す
+        refreshLastUpdateLabel();
       }
-      // 「Loading YYYY-MM-DD」表示を経過時間表示に戻す
-      refreshLastUpdateLabel();
     }
 
     function showError(msg) {
@@ -821,23 +824,32 @@
     }
 
     async function fetchAPI(endpoint) {
-      if (!state.url) return null;
+      if (!state.url) throw new Error('Nightscout URL is not configured');
 
       const headers = { Accept: 'application/json' };
       const authedEndpoint = appendReadToken(endpoint);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CONFIG.FETCH_TIMEOUT_MS);
 
       try {
         const response = await fetch(`${state.url}${authedEndpoint}`, {
           headers,
-          cache: 'no-store'
+          cache: 'no-store',
+          signal: controller.signal
         });
 
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return await response.json();
       } catch (error) {
         console.error('Fetch Error:', error);
-        showError('Connection failed.');
-        return null;
+        if (error?.name === 'AbortError') {
+          showError('Connection timed out. Retrying automatically.');
+          throw new Error(`Request timed out: ${endpoint}`, { cause: error });
+        }
+        showError('Connection failed. Retrying automatically.');
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
@@ -849,11 +861,20 @@
       state.isFetching = true;
 
       const now = new Date();
-      const shouldFullFetch = forceFull || !state.data.entries.length || !state.lastFetchAt;
+      // スリープやタブ非表示で前回フェッチから間隔が空くと、固定20分の差分窓では
+      // その間のデータを永久に取りこぼし、当日グラフ・サマリーに穴が空く。
+      // devicestatus の差分窓（3時間）を超える空白はフル取得に切り替え、
+      // それ以下の空白は前回フェッチ時刻（マージン5分付き）までさかのぼって差分取得する。
+      const gapMs = state.lastFetchAt ? now.getTime() - state.lastFetchAt.getTime() : Infinity;
+      const shouldFullFetch = forceFull || !state.data.entries.length || !state.lastFetchAt ||
+        gapMs > CONFIG.DEVICESTATUS_LOOKBACK_HOURS_DELTA * 3600000;
 
       const entryFrom = new Date(now);
       if (shouldFullFetch) entryFrom.setDate(entryFrom.getDate() - CONFIG.FULL_LOOKBACK_DAYS);
-      else entryFrom.setMinutes(entryFrom.getMinutes() - CONFIG.DELTA_LOOKBACK_MINUTES);
+      else entryFrom.setTime(Math.min(
+        now.getTime() - CONFIG.DELTA_LOOKBACK_MINUTES * 60000,
+        state.lastFetchAt.getTime() - 5 * 60000
+      ));
 
       const dsFrom = new Date(now);
       if (shouldFullFetch) dsFrom.setHours(dsFrom.getHours() - CONFIG.DEVICESTATUS_LOOKBACK_HOURS_FULL);
@@ -1800,12 +1821,16 @@
       return Math.max(0, Math.min(7, Math.round((todayStart.getTime() - targetStart.getTime()) / 86400000)));
     }
 
+    // offsetDays の変更はユーザーのパン操作起因（lastHistoryInteractionAt > 0）の
+    // ときだけ反映する。0時直後はチャート中心（=最新エントリ）が前日タイムスタンプの
+    // ままなので、無条件に同期すると offsetDays が勝手に 1 になり、定期更新・
+    // タブ復帰時更新・自動復帰タイマーのすべてが止まるデッドロックが毎晩発生していた。
     function syncVisibleDayFromChart() {
       if (!chartInstance?.scales?.x) return;
       const x = chartInstance.scales.x;
       const center = (Number(x.min) + Number(x.max)) / 2;
       const newOffset = dayOffsetFromTimeMs(center);
-      if (newOffset !== state.offsetDays) {
+      if (newOffset !== state.offsetDays && state.lastHistoryInteractionAt > 0) {
         state.offsetDays = newOffset;
       }
       updateDateControls();
