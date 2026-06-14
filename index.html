@@ -659,7 +659,10 @@
       REFRESH_INTERVAL_MS: 3 * 60 * 1000,
       AGP_REFRESH_INTERVAL_MS: 15 * 60 * 1000,
       DATA_RETENTION_DAYS: 8,
-      CHART_POINT_RADIUS: 6
+      CHART_POINT_RADIUS: 6,
+      // 履歴（前日など）を閲覧してからライブ表示へ自動復帰するまでの猶予時間。
+      // この時間ユーザー操作が無ければ「Today」へ戻し、ライブ更新を再開する。
+      LIVE_RETURN_IDLE_MS: 3 * 60 * 1000
     };
 
     const state = {
@@ -675,7 +678,9 @@
       loadedDeviceStatusDays: new Set(),
       lastHistoryInteractionAt: 0,
       isFetching: false,      // fetchAllData の多重実行防止
-      isNavigating: false     // jumpToDay（日付ボタン連打）の多重実行防止
+      isNavigating: false,    // jumpToDay（日付ボタン連打）の多重実行防止
+      lastSeenDayKey: null,   // 日付跨ぎ（0時境界）検知用の最終観測カレンダー日
+      pendingDayRollover: false // 閲覧中に跨いだ日付変更を、猶予満了まで保持するフラグ
     };
 
     let chartInstance = null;
@@ -1952,7 +1957,12 @@
       ['mousemove', 'touchstart', 'click', 'keydown'].forEach(evt => document.addEventListener(evt, resetIdle, { passive: true }));
 
       document.addEventListener('visibilitychange', () => {
-        if (!document.hidden && state.url && state.offsetDays === 0) fetchAllData(false);
+        if (document.hidden) return;
+        // 前面復帰時、ライブから外れていれば即座に収束させ（最大30秒の待ちを排除）、
+        // 既にライブなら最新データを取得する。returnToToday 経由のフェッチと重複しても
+        // isFetching ガードで二重実行は防止される。
+        liveWatchdogTick();
+        if (state.url && state.offsetDays === 0) fetchAllData(false);
       });
     }
 
@@ -2012,14 +2022,90 @@
       if (idleMinutes >= 3) document.body.classList.add('dimmed');
     }, 60 * 1000);
 
-    setInterval(() => {
-      if (state.lastHistoryInteractionAt > 0) {
-        const elapsed = Date.now() - state.lastHistoryInteractionAt;
-        if (elapsed > 3 * 60 * 1000) {
-          returnToToday();
-        }
+    // カレンダー日の「変化エッジ」を検知する。
+    // 0時ちょうどに単発 setTimeout を仕掛ける方式は、バックグラウンドタブの
+    // タイマー間引きや端末スリープで「数分遅れ」または「発火せず」になり得るため、
+    // 短い間隔で現在日と前回観測日を比較する方式を採る（スリープ復帰後も確実）。
+    function checkDateRollover() {
+      const todayKey = dateKeyFromDate(new Date());
+      if (state.lastSeenDayKey === null) {
+        state.lastSeenDayKey = todayKey;   // 初回観測。変化扱いにしない。
+        return false;
       }
-    }, 30 * 1000);
+      if (todayKey !== state.lastSeenDayKey) {
+        state.lastSeenDayKey = todayKey;
+        return true;
+      }
+      return false;
+    }
+
+    // 日付変更時のクリーン再構築。
+    // あえて location.reload()（ページ全体の再読み込み）は使わない。常時表示の
+    // 血糖ダッシュボードでは、深夜のネットワーク瞬断と再読み込みが重なると画面が
+    // 真っ白（血糖値が一切出ない状態）になり得るうえ、フルスクリーン解除や CDN 再取得を
+    // 伴い、ユーザー操作なしには元の表示へ戻れなくなる。代わりにアプリ状態だけを
+    // リセットし、当日基準でチャート・サマリー・AGP を作り直してフル取得する。
+    function forceLiveReload() {
+      state.offsetDays = 0;
+      state.lastHistoryInteractionAt = 0;
+      state.lastMainChartSignature = '';
+      state.lastSummaryCalcAt = 0;   // サマリーの30秒スロットルを跨いで即時再計算
+      state.lastAgpDrawAt = 0;       // AGP も即時再描画
+      state.lastFetchAt = null;      // 差分ではなくフル取得経路を強制
+
+      updateDateControls();
+      updateChart({ force: true });  // 新しい当日基準でチャートを全再構築
+      if (state.url) fetchAllData(true); // 8日分フル取得（document.hidden 時は内部で延期）
+    }
+
+    // ライブ監視（ウォッチドッグ）。
+    // 旧実装は state.lastHistoryInteractionAt > 0 のときだけ復帰していたため、
+    // 何らかの理由で offsetDays が「前日」に固定され、かつ操作フラグが立っていない
+    // 状態（毎晩の日付跨ぎで発生していたデッドロック）を検知できず、ライブ更新が
+    // 止まったままになり得た。ここでは日付跨ぎを明示的に検知しつつ、「ライブから
+    // 外れている／ライブ更新が滞っている」状態を原因経路に依存せず復帰させる。
+    function liveWatchdogTick() {
+      // 日付変更エッジは1tickでしか true にならないため、保留フラグに退避する。
+      // これをしないと、閲覧猶予中に跨いだ日付変更が下の early-return で捨てられ、
+      // midnight 専用のクリーン再構築が永久にスキップされてしまう。
+      if (checkDateRollover()) state.pendingDayRollover = true;
+
+      // 履歴閲覧中（操作猶予内）は閲覧を妨げない。日付が変わっても見ているのは
+      // 読込済みの過去データなので即時の作り直しは不要。pendingDayRollover は保持され、
+      // 猶予満了時に下でクリーン再構築される。
+      if (state.lastHistoryInteractionAt > 0 &&
+          Date.now() - state.lastHistoryInteractionAt <= CONFIG.LIVE_RETURN_IDLE_MS) {
+        return;
+      }
+
+      // ここから先は「ライブへ収束してよい」状態（無操作 or 猶予満了）。
+      // 日付を跨いでいたなら、当日境界・選択日シェーディング・サマリー・AGP の集計
+      // 基準が全てズレているため、軽い復帰ではなくフル取得＋全再構築で作り直す。
+      // 前日を跨いで閲覧していた場合もここを通るため、戻り先が確実に当日基準になる。
+      if (state.pendingDayRollover) {
+        state.pendingDayRollover = false;
+        forceLiveReload();
+        return;
+      }
+
+      // 日付跨ぎ以外で、まだライブから外れていれば収束させる。
+      // offsetDays が前日に固定された状態や操作フラグの消し残しを経路に関係なく回収。
+      if (state.offsetDays !== 0 || state.lastHistoryInteractionAt !== 0) {
+        returnToToday();
+        return;
+      }
+
+      // 名目上はライブ（offsetDays === 0）。定期フェッチがバックグラウンド間引き等で
+      // 静かに停止している場合に備え、最終フェッチからの経過が更新間隔を大きく超えて
+      // いれば明示的に再取得する。
+      if (state.url && !document.hidden) {
+        const fetchOverdue = !state.lastFetchAt ||
+          (Date.now() - state.lastFetchAt.getTime() > CONFIG.REFRESH_INTERVAL_MS * 1.5);
+        if (fetchOverdue) fetchAllData(false);
+      }
+    }
+
+    setInterval(liveWatchdogTick, 30 * 1000);
 
     window.addEventListener('beforeunload', () => {
       if (fetchInterval) clearInterval(fetchInterval);
