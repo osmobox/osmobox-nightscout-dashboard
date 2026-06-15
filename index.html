@@ -10,17 +10,19 @@
   <title>Nightscout Dashboard Stable</title>
 
   <!--
-    安定性のためライブラリのメジャー/マイナーバージョンを固定。
-    （バージョン未指定だと将来の破壊的アップデートでコード無変更のまま全停止するため）
+    単一HTML配布を維持するためCDNを使用する。全JS依存はバージョン固定済み。
+    Tailwind Browser CDNは本番利用非推奨のため、厳格な本番・オフライン配布では
+    生成済みCSSをこのstyleへ同梱し、下記JSもvendor/へ置くこと。
+    SRIはvendor化または固定配布物の採用時に、その実ファイルから生成する。
   -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/lucide@0.294.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.1.8/dist/index.global.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.294.0/dist/umd/lucide.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
   <style>
     :root {
@@ -162,6 +164,13 @@
       border: 1px solid rgba(71, 85, 105, 0.6);
       padding: 8px 12px;
       min-width: 120px;
+    }
+
+    #current-normal-view.data-stale #current-bg,
+    #current-normal-view.data-stale #trend-arrow,
+    #current-normal-view.data-stale #bg-delta {
+      color: #94a3b8 !important;
+      opacity: 0.68;
     }
   </style>
 </head>
@@ -536,7 +545,14 @@
           <input type="password" id="ns-secret" placeholder="readable token"
             class="w-full bg-slate-900 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-400 font-medium">
           <p class="mt-1 text-[11px] text-slate-400">読み取り専用tokenのみを使用します。API_SECRETは入力しないでください。</p>
+          <label class="mt-3 flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+            <input type="checkbox" id="remember-token" class="w-4 h-4">
+            <span>この端末に保存する</span>
+          </label>
+          <p class="mt-1 text-[10px] text-slate-500">未選択時はこのタブを閉じるまでのみ保持します。</p>
         </div>
+        <div id="settings-error"
+          class="hidden rounded border border-red-500 bg-red-900/80 px-3 py-2 text-xs text-red-200"></div>
       </div>
       <div class="mt-6 flex justify-end gap-3">
         <button id="btn-cancel-settings"
@@ -572,20 +588,114 @@
       console.warn('lucide icons unavailable:', e);
     }
 
-    // ===== localStorage 安全ラッパ =====
-    // 一部のWebView・プライベートモードでは localStorage アクセス自体が
-    // SecurityError を投げ、起動時に即死するため try-catch で包む。
-    const safeStorage = {
-      get(key) {
-        try { return localStorage.getItem(key); } catch (e) { return null; }
-      },
-      set(key, value) {
-        try { localStorage.setItem(key, value); } catch (e) { console.warn('localStorage unavailable:', e); }
-      },
-      remove(key) {
-        try { localStorage.removeItem(key); } catch (e) { /* noop */ }
+    // ===== storage / security =====
+    // 一部のWebView・プライベートモードではStorageアクセス自体が
+    // SecurityErrorを投げるため、必ず安全ラッパ経由で扱う。
+    function createSafeStorage(storageName) {
+      return {
+        get(key) {
+          try { return window[storageName].getItem(key); } catch (e) { return null; }
+        },
+        set(key, value) {
+          try { window[storageName].setItem(key, value); } catch (e) { console.warn(`${storageName} unavailable:`, e); }
+        },
+        remove(key) {
+          try { window[storageName].removeItem(key); } catch (e) { /* noop */ }
+        }
+      };
+    }
+
+    const safeLocalStorage = createSafeStorage('localStorage');
+    const safeSessionStorage = createSafeStorage('sessionStorage');
+    const TOKEN_PERSISTENCE_KEY = 'ns-token-persistence';
+
+    function normalizeNightscoutUrl(input) {
+      const raw = String(input || '').trim();
+      if (!raw) throw new TypeError('Nightscout URLを入力してください。');
+
+      let parsed;
+      try {
+        parsed = new URL(raw);
+      } catch (error) {
+        throw new TypeError('Nightscout URLの形式が正しくありません。');
       }
-    };
+
+      if (parsed.username || parsed.password) {
+        throw new TypeError('ユーザー名やパスワードを含むURLは使用できません。');
+      }
+
+      const isLocalDevelopment = parsed.hostname === 'localhost' ||
+        parsed.hostname === '127.0.0.1' ||
+        parsed.hostname === '[::1]';
+      const allowedProtocol = parsed.protocol === 'https:' ||
+        (parsed.protocol === 'http:' && isLocalDevelopment);
+      if (!allowedProtocol) {
+        throw new TypeError('HTTPSのNightscout URLを指定してください（localhostのみHTTP可）。');
+      }
+
+      return parsed.origin;
+    }
+
+    function loadStoredUrl() {
+      const stored = safeLocalStorage.get('ns-url') || '';
+      if (!stored) return { url: '', error: '' };
+      try {
+        const normalized = normalizeNightscoutUrl(stored);
+        if (normalized !== stored) safeLocalStorage.set('ns-url', normalized);
+        return { url: normalized, error: '' };
+      } catch (error) {
+        safeLocalStorage.remove('ns-url');
+        return { url: '', error: '保存されていたNightscout URLが不正なため削除しました。' };
+      }
+    }
+
+    function loadStoredToken() {
+      const persistence = safeLocalStorage.get(TOKEN_PERSISTENCE_KEY);
+      const localToken = safeLocalStorage.get('ns-token') || '';
+      const sessionToken = safeSessionStorage.get('ns-token') || '';
+      const legacySecret = safeLocalStorage.get('ns-secret') ||
+        safeSessionStorage.get('ns-secret') || '';
+
+      safeLocalStorage.remove('ns-secret');
+      safeSessionStorage.remove('ns-secret');
+
+      if (persistence === 'local' && localToken) {
+        return { token: localToken, remember: true };
+      }
+
+      // 旧版がlocalStorageへ常時保存していたtokenは、起動時にsessionStorageへ移行する。
+      const migratedToken = sessionToken || localToken || legacySecret;
+      if (migratedToken) safeSessionStorage.set('ns-token', migratedToken);
+      safeLocalStorage.remove('ns-token');
+      safeLocalStorage.remove(TOKEN_PERSISTENCE_KEY);
+      return { token: migratedToken, remember: false };
+    }
+
+    function storeReadToken(token, remember) {
+      const normalizedToken = String(token || '').trim();
+      safeLocalStorage.remove('ns-secret');
+      safeSessionStorage.remove('ns-secret');
+
+      if (!normalizedToken) {
+        safeLocalStorage.remove('ns-token');
+        safeSessionStorage.remove('ns-token');
+        safeLocalStorage.remove(TOKEN_PERSISTENCE_KEY);
+        return;
+      }
+
+      if (remember) {
+        safeLocalStorage.set('ns-token', normalizedToken);
+        safeLocalStorage.set(TOKEN_PERSISTENCE_KEY, 'local');
+        safeSessionStorage.remove('ns-token');
+      } else {
+        safeSessionStorage.set('ns-token', normalizedToken);
+        safeLocalStorage.remove('ns-token');
+        safeLocalStorage.remove(TOKEN_PERSISTENCE_KEY);
+      }
+    }
+
+    const storedUrlState = loadStoredUrl();
+    const storedTokenState = loadStoredToken();
 
     // GMI (標準)  : Bergenstal 2018 のコンセンサス式 = 3.31 + 0.02392 × 平均血糖(mg/dL)。
     // Adj (動的GMI): 赤血球の代謝回転を反映した recency-weighted GMI。各測定値を
@@ -603,33 +713,20 @@
           return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
         }
 
-        // {ms, v} を抽出し時刻順にソート(暴露時間の算出に必要)
-        const points = glucoseData
-          .map(d => ({ ms: toTimeMs(d), v: Number(d.sgv ?? d.glucose ?? d.value) }))
-          .filter(p => Number.isFinite(p.v) && p.v > 0 && Number.isFinite(p.ms) && p.ms > 0)
-          .sort((a, b) => a.ms - b.ms);
+        const points = getDurationWeightedGlucosePoints(glucoseData);
 
         if (points.length === 0) return { adjustedGmi: 0, gmi: 0, meanGlucose: 0 };
 
         const latestMs = points[points.length - 1].ms;
         let sumDur = 0, sumDurSgv = 0, sumW = 0, sumWSgv = 0;
 
-        for (let i = 0; i < points.length; i++) {
-          const p = points[i];
-
-          // 暴露時間(AUC)。ギャップは 15 分で頭打ちにして欠測の過大評価を防ぐ。
-          let durationMs = 5 * 60 * 1000;
-          if (i > 0) {
-            durationMs = p.ms - points[i - 1].ms;
-            if (durationMs > 15 * 60 * 1000) durationMs = 15 * 60 * 1000;
-            if (durationMs <= 0) durationMs = 5 * 60 * 1000;
-          }
-          sumDur += durationMs;
-          sumDurSgv += p.v * durationMs;
+        for (const p of points) {
+          sumDur += p.durationMs;
+          sumDurSgv += p.v * p.durationMs;
 
           // 赤血球動態に基づく指数関数的減衰(全値を対象、除外・ブーストなし)
           const ageDays = (latestMs - p.ms) / 86400000;
-          const w = durationMs * Math.exp(-ageDays / this.rbcTauDays);
+          const w = p.durationMs * Math.exp(-ageDays / this.rbcTauDays);
           sumW += w;
           sumWSgv += p.v * w;
         }
@@ -650,6 +747,7 @@
 
     const a1cCalculator = new ClinicalA1cCalculator();
 
+    // ===== config / state =====
     const CONFIG = {
       FULL_LOOKBACK_DAYS: 8,
       DELTA_LOOKBACK_MINUTES: 20,
@@ -657,6 +755,8 @@
       DEVICESTATUS_LOOKBACK_HOURS_DELTA: 3,
       FETCH_TIMEOUT_MS: 30 * 1000,
       REFRESH_INTERVAL_MS: 3 * 60 * 1000,
+      STALE_AFTER_MS: 10 * 60 * 1000,
+      STALE_RETRY_INTERVAL_MS: 5 * 60 * 1000,
       AGP_REFRESH_INTERVAL_MS: 15 * 60 * 1000,
       DATA_RETENTION_DAYS: 8,
       CHART_POINT_RADIUS: 6,
@@ -666,21 +766,27 @@
     };
 
     const state = {
-      url: safeStorage.get('ns-url') || '',
-      secret: safeStorage.get('ns-token') || safeStorage.get('ns-secret') || '',
+      url: storedUrlState.url,
+      secret: storedTokenState.token,
+      rememberToken: storedTokenState.remember,
+      initialConfigError: storedUrlState.error,
       data: { entries: [], treatments: [], profile: null, devicestatus: [] },
       timeRangeHours: 6,
       offsetDays: 0,
       lastFetchAt: null,
+      lastFetchAttemptAt: null,
+      lastStaleRefreshAt: 0,
       lastAgpDrawAt: 0,
       lastSummaryCalcAt: 0,
       lastMainChartSignature: '',
       loadedDeviceStatusDays: new Set(),
       lastHistoryInteractionAt: 0,
       isFetching: false,      // fetchAllData の多重実行防止
+      isStaleFetching: false, // stale時のentries限定再取得の多重実行防止
       isNavigating: false,    // jumpToDay（日付ボタン連打）の多重実行防止
-      lastSeenDayKey: null,   // 日付跨ぎ（0時境界）検知用の最終観測カレンダー日
-      pendingDayRollover: false // 閲覧中に跨いだ日付変更を、猶予満了まで保持するフラグ
+      lastSeenDayKey: dateKeyFromDate(new Date()), // 日付跨ぎ検知用の最終観測日
+      pendingDayRollover: false, // 閲覧中に跨いだ日付変更を、猶予満了まで保持するフラグ
+      pendingFullFetch: false // 非表示中の日付跨ぎで延期されたフル取得
     };
 
     let chartInstance = null;
@@ -700,11 +806,40 @@
     const safeSetText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
     const safeSetStyle = (id, prop, val) => { const el = document.getElementById(id); if (el) el.style[prop] = val; };
 
+    // ===== data normalization =====
     function toTimeMs(obj, field = 'dateString') {
       const raw = obj?.[field] ?? obj?.dateString ?? obj?.created_at ?? obj?.date;
       if (typeof raw === 'number') return raw;
       const ms = new Date(raw).getTime();
       return Number.isFinite(ms) ? ms : 0;
+    }
+
+    function getDurationWeightedGlucosePoints(entries, startMs = -Infinity, endMs = Infinity) {
+      const points = (Array.isArray(entries) ? entries : [])
+        .map(entry => ({
+          ms: toTimeMs(entry),
+          v: Number(entry?.sgv ?? entry?.glucose ?? entry?.value)
+        }))
+        .filter(point =>
+          Number.isFinite(point.ms) &&
+          point.ms >= startMs &&
+          point.ms < endMs &&
+          Number.isFinite(point.v) &&
+          point.v > 0
+        )
+        .sort((a, b) => a.ms - b.ms);
+
+      const DEFAULT_DURATION_MS = 5 * 60 * 1000;
+      const MAX_DURATION_MS = 15 * 60 * 1000;
+      return points.map((point, index) => {
+        const nextMs = points[index + 1]?.ms;
+        let durationMs = Number.isFinite(nextMs) ? nextMs - point.ms : DEFAULT_DURATION_MS;
+        if (!Number.isFinite(durationMs) || durationMs <= 0) durationMs = DEFAULT_DURATION_MS;
+        durationMs = Math.min(durationMs, MAX_DURATION_MS);
+        if (Number.isFinite(endMs)) durationMs = Math.min(durationMs, Math.max(0, endMs - point.ms));
+        if (durationMs <= 0) durationMs = DEFAULT_DURATION_MS;
+        return { ...point, durationMs };
+      });
     }
 
     function dateKeyFromDate(date) {
@@ -731,6 +866,7 @@
       };
     }
 
+    // ===== API =====
     async function fetchDeviceStatusForDay(offsetDays) {
       if (!state.url) return;
 
@@ -749,11 +885,13 @@
           count: 3000
         }));
 
-        state.data.devicestatus = mergeByKey(
-          state.data.devicestatus,
-          deviceData,
-          d => d._id || d.created_at
-        ).sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+        if (Array.isArray(deviceData)) {
+          state.data.devicestatus = mergeByKey(
+            state.data.devicestatus,
+            deviceData,
+            d => d._id || d.created_at
+          ).sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+        }
 
         state.loadedDeviceStatusDays.add(key);
         hideError();
@@ -779,8 +917,12 @@
         const entries = state.data.entries;
         latestMs = entries.length ? toTimeMs(entries[entries.length - 1]) : 0;
       }
-      const timeDiff = latestMs ? Math.floor((Date.now() - latestMs) / 60000) : null;
-      safeSetText('last-update-time', timeDiff === null ? '-- min ago' : `${timeDiff} min ago`);
+      const timeDiff = latestMs ? Math.max(0, Math.floor((Date.now() - latestMs) / 60000)) : null;
+      if (timeDiff === null) {
+        safeSetText('last-update-time', 'No glucose data');
+      } else {
+        safeSetText('last-update-time', `${timeDiff} min ago${timeDiff >= 10 ? ' • STALE' : ''}`);
+      }
     }
 
     function hideError() {
@@ -848,10 +990,8 @@
       } catch (error) {
         console.error('Fetch Error:', error);
         if (error?.name === 'AbortError') {
-          showError('Connection timed out. Retrying automatically.');
           throw new Error(`Request timed out: ${endpoint}`, { cause: error });
         }
-        showError('Connection failed. Retrying automatically.');
         throw error;
       } finally {
         clearTimeout(timeoutId);
@@ -859,13 +999,18 @@
     }
 
     async function fetchAllData(forceFull = false) {
-      if (!state.url || document.hidden) return;
+      if (!state.url) return;
+      if (document.hidden) {
+        if (forceFull) state.pendingFullFetch = true;
+        return;
+      }
 
       // interval・visibilitychange・returnToToday が重なった際の並行フェッチを防止。
       if (state.isFetching) return;
       state.isFetching = true;
 
       const now = new Date();
+      state.lastFetchAttemptAt = now;
       // スリープやタブ非表示で前回フェッチから間隔が空くと、固定20分の差分窓では
       // その間のデータを永久に取りこぼし、当日グラフ・サマリーに穴が空く。
       // devicestatus の差分窓（3時間）を超える空白はフル取得に切り替え、
@@ -888,52 +1033,128 @@
       safeSetText('last-update-time', 'Updating...');
 
       try {
-        if (!state.data.profile || shouldFullFetch) {
-          const profiles = await fetchAPI('/api/v1/profile.json');
-          if (Array.isArray(profiles) && profiles.length > 0) {
-            const defaultName = profiles[0].defaultProfile;
-            state.data.profile = profiles[0].store?.[defaultName] || null;
-          }
-        }
-
-        const [entriesData, treatsData, deviceData] = await Promise.all([
-          fetchAPI(buildEndpoint('/api/v1/entries.json', {
+        const requests = [
+          {
+            name: 'entries',
+            promise: fetchAPI(buildEndpoint('/api/v1/entries.json', {
             'find[dateString][$gte]': entryFrom.toISOString(),
             count: 10000
-          })),
-          fetchAPI(buildEndpoint('/api/v1/treatments.json', {
+            }))
+          },
+          {
+            name: 'treatments',
+            promise: fetchAPI(buildEndpoint('/api/v1/treatments.json', {
             'find[created_at][$gte]': entryFrom.toISOString(),
             count: 10000
-          })),
-          fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
+            }))
+          },
+          {
+            name: 'devicestatus',
+            promise: fetchAPI(buildEndpoint('/api/v1/devicestatus.json', {
             'find[created_at][$gte]': dsFrom.toISOString(),
             count: shouldFullFetch ? 1000 : 300
-          }))
-        ]);
+            }))
+          }
+        ];
+        if (!state.data.profile || shouldFullFetch) {
+          requests.push({ name: 'profile', promise: fetchAPI('/api/v1/profile.json') });
+        }
 
-        if (Array.isArray(entriesData)) {
-          state.data.entries = mergeByKey(state.data.entries, entriesData, e => e._id || e.date || e.dateString)
-            .sort((a, b) => toTimeMs(a) - toTimeMs(b));
-        }
-        if (Array.isArray(treatsData)) {
-          state.data.treatments = mergeByKey(state.data.treatments, treatsData, t => t._id || `${t.created_at}-${t.eventType || ''}-${t.insulin || ''}-${t.carbs || ''}`)
-            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
-        }
-        if (Array.isArray(deviceData)) {
-          state.data.devicestatus = mergeByKey(state.data.devicestatus, deviceData, d => d._id || d.created_at)
-            .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
-        }
+        const results = await Promise.allSettled(requests.map(request => request.promise));
+        const failedEndpoints = [];
+        let anySucceeded = false;
+        let entriesSucceeded = false;
+
+        results.forEach((result, index) => {
+          const name = requests[index].name;
+          if (result.status === 'rejected') {
+            failedEndpoints.push(name);
+            console.error(`${name} update failed:`, result.reason);
+            return;
+          }
+
+          const data = result.value;
+          if (name === 'entries' && Array.isArray(data)) {
+            anySucceeded = true;
+            entriesSucceeded = true;
+            state.data.entries = mergeByKey(state.data.entries, data, e => e._id || e.date || e.dateString)
+              .sort((a, b) => toTimeMs(a) - toTimeMs(b));
+          } else if (name === 'treatments' && Array.isArray(data)) {
+            anySucceeded = true;
+            state.data.treatments = mergeByKey(state.data.treatments, data, t => t._id || `${t.created_at}-${t.eventType || ''}-${t.insulin || ''}-${t.carbs || ''}`)
+              .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+          } else if (name === 'devicestatus' && Array.isArray(data)) {
+            anySucceeded = true;
+            state.data.devicestatus = mergeByKey(state.data.devicestatus, data, d => d._id || d.created_at)
+              .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+          } else if (name === 'profile' && Array.isArray(data) && data.length > 0) {
+            anySucceeded = true;
+            const defaultName = data[0].defaultProfile;
+            state.data.profile = data[0].store?.[defaultName] || null;
+          } else {
+            failedEndpoints.push(name);
+            console.error(`${name} update returned an invalid response`);
+          }
+        });
 
         pruneOldData();
-        state.lastFetchAt = now;
-        hideError();
-        updateUI({ dataFetched: true });
-        safeSetText('sync-time', `Sync: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
+        if (entriesSucceeded) state.lastFetchAt = now;
+        if (forceFull && anySucceeded) state.pendingFullFetch = false;
+        if (anySucceeded) {
+          updateUI({ dataFetched: true });
+          safeSetText('sync-time', `Sync: ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`);
+        } else {
+          refreshLastUpdateLabel();
+        }
+
+        if (failedEndpoints.length) {
+          showError(`Update failed: ${failedEndpoints.join(', ')}`);
+        } else if (isLatestGlucoseStale()) {
+          showError('Glucose data is over 10 min old. Refreshing latest entry.');
+        } else {
+          hideError();
+        }
       } catch (error) {
         console.error(error);
         showError('Data update failed.');
       } finally {
         state.isFetching = false;
+      }
+    }
+
+    async function refreshLatestEntriesOnly() {
+      if (!state.url || document.hidden || state.isFetching || state.isStaleFetching) return;
+      state.isStaleFetching = true;
+      state.lastStaleRefreshAt = Date.now();
+
+      const latest = state.data.entries[state.data.entries.length - 1];
+      const latestMs = latest ? toTimeMs(latest) : 0;
+      const fromMs = latestMs > 0 ? latestMs - CONFIG.DELTA_LOOKBACK_MINUTES * 60000 : Date.now() - 30 * 60000;
+
+      try {
+        const entriesData = await fetchAPI(buildEndpoint('/api/v1/entries.json', {
+          'find[dateString][$gte]': new Date(fromMs).toISOString(),
+          count: 300
+        }));
+        if (!Array.isArray(entriesData)) throw new Error('Invalid entries response');
+
+        state.data.entries = mergeByKey(state.data.entries, entriesData, e => e._id || e.date || e.dateString)
+          .sort((a, b) => toTimeMs(a) - toTimeMs(b));
+        pruneOldData();
+        state.lastFetchAt = new Date();
+        updateUI({ dataFetched: true });
+
+        if (isLatestGlucoseStale()) {
+          showError('Glucose data is over 10 min old. Retrying in 5 min.');
+        } else {
+          hideError();
+        }
+      } catch (error) {
+        console.error('Latest glucose refresh failed:', error);
+        showError('Latest glucose refresh failed. Retrying in 5 min.');
+        updateGlucoseFreshnessUI();
+      } finally {
+        state.isStaleFetching = false;
       }
     }
 
@@ -996,12 +1217,31 @@
       );
     }
 
+    function getLatestGlucoseAgeMs() {
+      const entries = state.data.entries;
+      if (!entries.length) return Infinity;
+      const latestMs = toTimeMs(entries[entries.length - 1]);
+      return latestMs > 0 ? Math.max(0, Date.now() - latestMs) : Infinity;
+    }
+
+    function isLatestGlucoseStale() {
+      return getLatestGlucoseAgeMs() >= CONFIG.STALE_AFTER_MS;
+    }
+
+    function updateGlucoseFreshnessUI() {
+      const stale = isLatestGlucoseStale();
+      document.getElementById('current-normal-view')?.classList.toggle('data-stale', stale);
+      refreshLastUpdateLabel();
+      return stale;
+    }
+
     function updateUI({ dataFetched = false } = {}) {
       const entries = state.data.entries;
       if (!entries.length) {
         // 接続は成功したがデータが0件の場合、旧コードでは「Loading...」表示のまま
         // 永久に固まっていたため、状態を明示する。
-        if (dataFetched) safeSetText('last-update-time', 'No data');
+        if (dataFetched) safeSetText('last-update-time', 'No glucose data');
+        updateGlucoseFreshnessUI();
         return;
       }
 
@@ -1032,6 +1272,7 @@
 
       const latestMs = toTimeMs(latest);
       refreshLastUpdateLabel(latestMs);
+      updateGlucoseFreshnessUI();
 
       const dsList = state.data.devicestatus;
       const ds = dsList.length ? dsList[dsList.length - 1] : null;
@@ -1065,6 +1306,7 @@
       }
     }
 
+    // ===== statistics =====
     function calculateSummaries() {
       // 短時間に updateUI が連続実行された場合（タブ復帰直後＋定期更新の重複など）の
       // 重複計算を抑止する。state.lastSummaryCalcAt は旧コードで定義のみされ未使用だった。
@@ -1097,26 +1339,31 @@
       let tbr = 0, tir = 0, tar = 0, mean = 0, cv = 0;
       let tbr54 = 0, tbr70 = 0, tar250 = 0, tirScore = 0;
 
-      const values = periodEntries
-        .map(e => Number(e.sgv ?? e.glucose ?? e.value))
-        .filter(Number.isFinite);
+      const weightedPoints = getDurationWeightedGlucosePoints(periodEntries, start, end);
+      const totalDuration = weightedPoints.reduce((sum, point) => sum + point.durationMs, 0);
 
-      const total = values.length;
-
-      if (total) {
-        tbr54 = values.filter(v => v < 54).length / total * 100;
-        tbr70 = values.filter(v => v >= 54 && v < 70).length / total * 100;
+      if (totalDuration > 0) {
+        const durationFor = predicate => weightedPoints.reduce(
+          (sum, point) => sum + (predicate(point.v) ? point.durationMs : 0),
+          0
+        );
+        tbr54 = durationFor(v => v < 54) / totalDuration * 100;
+        tbr70 = durationFor(v => v >= 54 && v < 70) / totalDuration * 100;
         tbr = tbr54 + tbr70;
 
-        tir = values.filter(v => v >= 70 && v <= 180).length / total * 100;
-        tar = values.filter(v => v > 180).length / total * 100;
-        tar250 = values.filter(v => v > 250).length / total * 100;
+        tir = durationFor(v => v >= 70 && v <= 180) / totalDuration * 100;
+        tar = durationFor(v => v > 180) / totalDuration * 100;
+        tar250 = durationFor(v => v > 250) / totalDuration * 100;
 
         tirScore = tir - 5 * tbr54 - 2 * tbr70 - 1 * tar250;
         tirScore = Math.max(0, Math.min(100, tirScore));
 
-        mean = values.reduce((a, b) => a + b, 0) / total;
-        const sd = Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / total);
+        mean = weightedPoints.reduce((sum, point) => sum + point.v * point.durationMs, 0) / totalDuration;
+        const variance = weightedPoints.reduce(
+          (sum, point) => sum + Math.pow(point.v - mean, 2) * point.durationMs,
+          0
+        ) / totalDuration;
+        const sd = Math.sqrt(variance);
         cv = mean > 0 ? sd / mean * 100 : 0;
       }
 
@@ -1138,7 +1385,7 @@
         else bolus += insulin;
       });
 
-      const basal = calculateIntegralBasal(startDate, endDate, periodTreats);
+      const basal = calculateIntegralBasal(startDate, endDate, state.data.treatments);
       const tdd = basal + bolus + smb;
       const activeInsulin = bolus + smb;
       const crBolus = bolus > 0 ? totalCarbs / bolus : 0;
@@ -1203,8 +1450,8 @@
       return value;
     }
 
-    function getProfileBasalRate(date) {
-      return getScheduledValue(state.data.profile?.basal, date, 0);
+    function getProfileBasalRate(date, profile = state.data.profile) {
+      return getScheduledValue(profile?.basal, date, 0);
     }
 
     function getTempBasalAbsolute(t) {
@@ -1213,11 +1460,26 @@
       return null;
     }
 
-    function calculateIntegralBasal(startDate, endDate, periodTreats) {
-      if (!state.data.profile?.basal) return 0;
+    function getOverlappingTempBasals(startDate, endDate, treatments = state.data.treatments) {
+      const periodStart = startDate.getTime();
+      const periodEnd = endDate.getTime();
+      return (Array.isArray(treatments) ? treatments : [])
+        .filter(treatment => {
+          if (treatment.eventType !== 'Temp Basal') return false;
+          const durationMinutes = Number(treatment.duration);
+          const rate = getTempBasalAbsolute(treatment);
+          const start = toTimeMs(treatment, 'created_at');
+          if (!Number.isFinite(durationMinutes) || durationMinutes <= 0 || rate === null || start <= 0) return false;
+          const end = start + durationMinutes * 60000;
+          return start < periodEnd && end > periodStart;
+        })
+        .sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
+    }
+
+    function calculateIntegralBasal(startDate, endDate, treatments = state.data.treatments, profile = state.data.profile) {
+      if (!profile?.basal) return 0;
       let total = 0;
-      const tempBasals = periodTreats
-        .filter(t => t.eventType === 'Temp Basal' && Number(t.duration) > 0 && getTempBasalAbsolute(t) !== null)
+      const tempBasals = getOverlappingTempBasals(startDate, endDate, treatments)
         .map(t => {
           const start = toTimeMs(t, 'created_at');
           return { start, end: start + Number(t.duration) * 60000, rate: getTempBasalAbsolute(t) };
@@ -1232,8 +1494,10 @@
       for (let timeMs = startDate.getTime(); timeMs < endMs; timeMs += STEP_MS) {
         // 期間末尾の端数ステップは実時間分のみ積算する
         const effectiveHours = timeMs + STEP_MS > endMs ? (endMs - timeMs) / 3600000 : STEP_HOURS;
-        let rate = getProfileBasalRate(new Date(timeMs));
-        for (const tb of tempBasals) {
+        let rate = getProfileBasalRate(new Date(timeMs), profile);
+        // 重複時は後から開始したTemp Basalを優先する。
+        for (let index = tempBasals.length - 1; index >= 0; index--) {
+          const tb = tempBasals[index];
           if (timeMs >= tb.start && timeMs < tb.end) {
             rate = tb.rate;
             break;
@@ -1280,6 +1544,7 @@
       safeSetText(`${prefix}-cv-agp`, Number.isFinite(stats.cv) ? Math.round(stats.cv) : '--');
     }
 
+    // ===== chart rendering =====
     function makeTargetAnnotation(alpha = 0.08) {
       return {
         type: 'box', yMin: 70, yMax: 180,
@@ -1326,10 +1591,16 @@
         const d = toTimeMs(e);
         return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
       });
-      const plotTreats = state.data.treatments.filter(t => {
+      const inRangeTreatments = state.data.treatments.filter(t => {
         const d = toTimeMs(t, 'created_at');
         return d >= timelineStart.getTime() && d <= panMaxEnd.getTime();
       });
+      const overlappingTempBasals = getOverlappingTempBasals(timelineStart, panMaxEnd, state.data.treatments);
+      const plotTreats = mergeByKey(
+        inRangeTreatments,
+        overlappingTempBasals,
+        t => t._id || `${t.created_at}-${t.eventType || ''}-${t.duration || ''}-${t.absolute ?? t.rate ?? ''}`
+      ).sort((a, b) => toTimeMs(a, 'created_at') - toTimeMs(b, 'created_at'));
       const plotDeviceStatus = state.data.devicestatus.filter(d => {
         const dt = toTimeMs(d, 'created_at');
         return dt >= timelineStart.getTime() && dt <= panMaxEnd.getTime();
@@ -1393,18 +1664,22 @@
       const profileBasalData = [];
       let maxBasalVal = 1;
       if (state.data.profile?.basal) {
+        const tempBasalRanges = overlappingTempBasals.map(t => {
+          const start = toTimeMs(t, 'created_at');
+          return { start, end: start + Number(t.duration) * 60000, rate: getTempBasalAbsolute(t) };
+        });
         const iter = new Date(timelineStart); iter.setMinutes(0, 0, 0);
         while (iter <= panMaxEnd) {
           const tMs = iter.getTime();
           const profRate = getProfileBasalRate(iter);
           let actualRate = profRate;
-          const tempBasal = plotTreats.find(t => {
-            if (t.eventType !== 'Temp Basal' || Number(t.duration) <= 0 || getTempBasalAbsolute(t) === null) return false;
-            const ts = toTimeMs(t, 'created_at');
-            const te = ts + Number(t.duration) * 60000;
-            return tMs >= ts && tMs < te;
-          });
-          if (tempBasal) actualRate = getTempBasalAbsolute(tempBasal);
+          for (let index = tempBasalRanges.length - 1; index >= 0; index--) {
+            const tempBasal = tempBasalRanges[index];
+            if (tMs >= tempBasal.start && tMs < tempBasal.end) {
+              actualRate = tempBasal.rate;
+              break;
+            }
+          }
           profileBasalData.push({ x: tMs, y: profRate });
           basalData.push({ x: tMs, y: actualRate });
           maxBasalVal = Math.max(maxBasalVal, profRate, actualRate);
@@ -1476,53 +1751,83 @@
       return tooltipEl;
     }
 
+    function appendTooltipLine(container, label, value, unit = '', color = '#fff', fontSize = '12px') {
+      const row = document.createElement('div');
+      Object.assign(row.style, { fontSize, fontWeight: 'bold', color, marginBottom: '2px' });
+
+      const labelEl = document.createElement('span');
+      Object.assign(labelEl.style, { color: '#94a3b8', fontSize: '11px', fontWeight: 'bold' });
+      labelEl.textContent = `${label}: `;
+      row.appendChild(labelEl);
+
+      row.appendChild(document.createTextNode(String(value)));
+      if (unit) {
+        const unitEl = document.createElement('span');
+        Object.assign(unitEl.style, { fontSize: '10px', fontWeight: 'normal' });
+        unitEl.textContent = ` ${unit}`;
+        row.appendChild(unitEl);
+      }
+      container.appendChild(row);
+    }
+
     function makeExternalTooltip(plotTreats) {
       return (context) => {
         const { chart, tooltip } = context;
         const tooltipEl = getOrCreateTooltip(chart);
         if (tooltip.opacity === 0) { tooltipEl.style.opacity = 0; return; }
         if (tooltip.dataPoints?.length) {
+          tooltipEl.replaceChildren();
           const hoverTime = tooltip.dataPoints[0].parsed.x;
           const d = new Date(hoverTime);
           const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-          let html = `<div style="font-size:12px;color:#cbd5e1;font-weight:bold;margin-bottom:4px;border-bottom:1px solid rgba(71,85,105,0.5);padding-bottom:4px;">${timeStr}</div>`;
-          // ?.raw.y は raw が undefined のとき TypeError になるため ?.raw?.y に修正。
+          const header = document.createElement('div');
+          Object.assign(header.style, {
+            fontSize: '12px',
+            color: '#cbd5e1',
+            fontWeight: 'bold',
+            marginBottom: '4px',
+            borderBottom: '1px solid rgba(71,85,105,0.5)',
+            paddingBottom: '4px'
+          });
+          header.textContent = timeStr;
+          tooltipEl.appendChild(header);
+
           const bgValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'BG')?.raw?.y;
-          if (bgValue !== undefined) html += `<div style="font-size:16px;font-weight:900;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">BG:</span> ${bgValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
+          if (bgValue !== undefined) appendTooltipLine(tooltipEl, 'BG', bgValue, 'mg/dL', '#fff', '16px');
           const predValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Predicted')?.raw?.y;
-          if (predValue !== undefined && bgValue === undefined) html += `<div style="font-size:15px;font-weight:bold;color:#c084fc;margin-bottom:2px;"><span style="color:#94a3b8;font-size:11px;font-weight:bold;">Pred:</span> ${predValue} <span style="font-size:10px;font-weight:normal;">mg/dL</span></div>`;
+          if (predValue !== undefined && bgValue === undefined) appendTooltipLine(tooltipEl, 'Pred', predValue, 'mg/dL', '#c084fc', '15px');
           const basalValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'Basal')?.raw?.y;
-          if (Number.isFinite(basalValue)) html += `<div style="font-size:12px;font-weight:bold;color:#60a5fa;"><span style="color:#94a3b8;font-size:11px;">Basal:</span> ${basalValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U/h</span></div>`;
+          if (Number.isFinite(basalValue)) appendTooltipLine(tooltipEl, 'Basal', basalValue.toFixed(2), 'U/h', '#60a5fa');
           const iobValue = tooltip.dataPoints.find(dp => dp.dataset.label === 'IOB')?.raw?.y;
-          if (Number.isFinite(iobValue)) html += `<div style="font-size:12px;font-weight:bold;color:#38bdf8;"><span style="color:#94a3b8;font-size:11px;">IOB:</span> ${iobValue.toFixed(2)} <span style="font-size:10px;font-weight:normal;">U</span></div>`;
-          // --- ここから追加：ツールチップへのCOB元データ復元表示 ---
+          if (Number.isFinite(iobValue)) appendTooltipLine(tooltipEl, 'IOB', iobValue.toFixed(2), 'U', '#38bdf8');
+
           const cobRawPoint = tooltip.dataPoints.find(dp => dp.dataset.label === 'COB')?.raw;
           if (cobRawPoint !== undefined) {
-            // 先ほどプロット時に (COB / CR) をしたので、表示時はその時刻の予測CR、
-            // もしくはツールチップ上のCarb入力などから逆算して元のグラム数を割り出します。
-            // ここでは簡易的に、そのデバイスステータス時点の元のCOB値をstateから再検索、または概算します。
             const targetTime = cobRawPoint.x;
             const matchedDs = state.data.devicestatus.find(d => Math.abs(toTimeMs(d, 'created_at') - targetTime) < 2 * 60000);
-            const originalCob = matchedDs ? getCobFromDeviceStatus(matchedDs) : null;
-            
-            if (originalCob !== null && originalCob > 0) {
-              html += `<div style="font-size:12px;font-weight:bold;color:#facc15;"><span style="color:#94a3b8;font-size:11px;">COB:</span> ${Number(originalCob).toFixed(0)} <span style="font-size:10px;font-weight:normal;">g</span></div>`;
-            }
+            const originalCob = Number(matchedDs ? getCobFromDeviceStatus(matchedDs) : NaN);
+            if (Number.isFinite(originalCob) && originalCob > 0) appendTooltipLine(tooltipEl, 'COB', originalCob.toFixed(0), 'g', '#facc15');
           }
-          // --- ここまで追加 ---
+
           const treats = plotTreats.filter(t => Math.abs(toTimeMs(t, 'created_at') - hoverTime) < 3 * 60000);
           if (treats.length) {
-            html += `<div style="margin-top:4px;padding-top:4px;border-top:1px dashed rgba(71,85,105,0.5);">`;
+            const treatmentGroup = document.createElement('div');
+            Object.assign(treatmentGroup.style, {
+              marginTop: '4px',
+              paddingTop: '4px',
+              borderTop: '1px dashed rgba(71,85,105,0.5)'
+            });
             treats.forEach(t => {
-              if (Number(t.carbs) > 0) html += `<div style="font-size:14px;color:#facc15;font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">Carbs:</span> ${t.carbs}g</div>`;
-              if (Number(t.insulin) > 0 && !(t.eventType || '').toLowerCase().includes('temp')) {
+              const carbs = Number(t.carbs);
+              const insulin = Number(t.insulin);
+              if (Number.isFinite(carbs) && carbs > 0) appendTooltipLine(treatmentGroup, 'Carbs', carbs, 'g', '#facc15', '14px');
+              if (Number.isFinite(insulin) && insulin > 0 && !(t.eventType || '').toLowerCase().includes('temp')) {
                 const isSMB = isLikelySMB(t);
-                html += `<div style="font-size:14px;color:${isSMB ? '#d8b4fe' : '#67e8f9'};font-weight:bold;"><span style="color:#94a3b8;font-size:11px;">${isSMB ? 'SMB' : 'Bolus'}:</span> ${t.insulin}U</div>`;
+                appendTooltipLine(treatmentGroup, isSMB ? 'SMB' : 'Bolus', insulin, 'U', isSMB ? '#d8b4fe' : '#67e8f9', '14px');
               }
             });
-            html += `</div>`;
+            if (treatmentGroup.childNodes.length) tooltipEl.appendChild(treatmentGroup);
           }
-          tooltipEl.innerHTML = html;
         }
         tooltipEl.style.opacity = 1;
         const tooltipWidth = tooltipEl.offsetWidth;
@@ -1538,13 +1843,43 @@
       };
     }
 
+    function simpleStringHash(value) {
+      const text = String(value || '');
+      let hash = 2166136261;
+      for (let index = 0; index < text.length; index++) {
+        hash ^= text.charCodeAt(index);
+        hash = Math.imul(hash, 16777619);
+      }
+      return (hash >>> 0).toString(16);
+    }
+
+    function makeDataSignature() {
+      const latestEntry = state.data.entries[state.data.entries.length - 1];
+      const latestTreatment = state.data.treatments[state.data.treatments.length - 1];
+      const latestDeviceStatus = state.data.devicestatus[state.data.devicestatus.length - 1];
+      const profileJson = JSON.stringify(state.data.profile || null);
+      return [
+        state.offsetDays,
+        state.timeRangeHours,
+        state.data.entries.length,
+        state.data.treatments.length,
+        state.data.devicestatus.length,
+        latestEntry ? toTimeMs(latestEntry) : 0,
+        latestEntry ? Number(latestEntry.sgv ?? latestEntry.glucose ?? latestEntry.value) : '',
+        latestTreatment ? toTimeMs(latestTreatment, 'created_at') : 0,
+        latestDeviceStatus ? toTimeMs(latestDeviceStatus, 'created_at') : 0,
+        profileJson.length,
+        simpleStringHash(profileJson)
+      ].join('|');
+    }
+
     function updateChart({ force = false } = {}) {
       if (!state.data.entries.length) return;
       const ctxEl = document.getElementById('bgChart');
       if (!ctxEl) return;
 
       const payload = getMainChartPayload();
-      const signature = [state.offsetDays, state.timeRangeHours, state.data.entries.length, state.data.treatments.length, state.data.devicestatus.length].join('|');
+      const signature = makeDataSignature();
 
       if (!force && chartInstance && signature === state.lastMainChartSignature) return;
       state.lastMainChartSignature = signature;
@@ -1898,8 +2233,26 @@
       updateChart({ force: true });
 
       if (state.url) {
-        fetchAllData(false);
+        if (isLatestGlucoseStale()) maybeRefreshStaleGlucose();
+        else fetchAllData(false);
       }
+    }
+
+    // ===== UI events =====
+    function showSettingsError(message = '') {
+      const errorEl = document.getElementById('settings-error');
+      if (!errorEl) return;
+      errorEl.textContent = message;
+      errorEl.classList.toggle('hidden', !message);
+    }
+
+    function populateSettingsForm() {
+      const urlEl = document.getElementById('ns-url');
+      const secretEl = document.getElementById('ns-secret');
+      const rememberEl = document.getElementById('remember-token');
+      if (urlEl) urlEl.value = state.url;
+      if (secretEl) secretEl.value = state.secret;
+      if (rememberEl) rememberEl.checked = state.rememberToken;
     }
 
     // 要素が見つからない場合でも初期化全体が TypeError で停止しないようにするヘルパー。
@@ -1919,19 +2272,29 @@
       });
 
       on('btn-settings', 'click', () => {
-        const urlEl = document.getElementById('ns-url');
-        const secretEl = document.getElementById('ns-secret');
-        if (urlEl) urlEl.value = state.url;
-        if (secretEl) secretEl.value = state.secret;
+        populateSettingsForm();
+        showSettingsError('');
         document.getElementById('settings-modal')?.classList.remove('hidden');
       });
       on('btn-cancel-settings', 'click', () => document.getElementById('settings-modal')?.classList.add('hidden'));
       on('btn-save-settings', 'click', () => {
-        state.url = (document.getElementById('ns-url')?.value || '').trim().replace(/\/$/, '');
-        state.secret = (document.getElementById('ns-secret')?.value || '').trim();
-        safeStorage.set('ns-url', state.url);
-        safeStorage.set('ns-token', state.secret);
-        safeStorage.remove('ns-secret');
+        let normalizedUrl;
+        try {
+          normalizedUrl = normalizeNightscoutUrl(document.getElementById('ns-url')?.value || '');
+        } catch (error) {
+          showSettingsError(error.message || 'Nightscout URLが不正です。');
+          return;
+        }
+
+        const token = (document.getElementById('ns-secret')?.value || '').trim();
+        const rememberToken = Boolean(document.getElementById('remember-token')?.checked);
+        state.url = normalizedUrl;
+        state.secret = token;
+        state.rememberToken = rememberToken;
+        state.initialConfigError = '';
+        safeLocalStorage.set('ns-url', state.url);
+        storeReadToken(state.secret, state.rememberToken);
+        showSettingsError('');
         document.getElementById('settings-modal')?.classList.add('hidden');
         resetDataAndCharts();
         initApp();
@@ -1958,17 +2321,26 @@
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) return;
+        if (state.pendingFullFetch) {
+          fetchAllData(true);
+          return;
+        }
         // 前面復帰時、ライブから外れていれば即座に収束させ（最大30秒の待ちを排除）、
         // 既にライブなら最新データを取得する。returnToToday 経由のフェッチと重複しても
         // isFetching ガードで二重実行は防止される。
         liveWatchdogTick();
-        if (state.url && state.offsetDays === 0) fetchAllData(false);
+        if (state.url && state.offsetDays === 0) {
+          if (isLatestGlucoseStale()) maybeRefreshStaleGlucose();
+          else fetchAllData(false);
+        }
       });
     }
 
     function resetDataAndCharts() {
       state.data = { entries: [], treatments: [], profile: null, devicestatus: [] };
       state.lastFetchAt = null;
+      state.lastFetchAttemptAt = null;
+      state.lastStaleRefreshAt = 0;
       state.lastMainChartSignature = '';
       state.lastSummaryCalcAt = 0;
       state.lastAgpDrawAt = 0;
@@ -1981,14 +2353,17 @@
 
     function initApp() {
       if (!state.url) {
-        document.getElementById('settings-modal').classList.remove('hidden');
+        populateSettingsForm();
+        document.getElementById('settings-modal')?.classList.remove('hidden');
+        if (state.initialConfigError) showSettingsError(state.initialConfigError);
         return;
       }
       fetchAllData(true);
       if (fetchInterval) clearInterval(fetchInterval);
       fetchInterval = setInterval(() => {
         if (state.offsetDays === 0 && state.lastHistoryInteractionAt === 0) {
-          fetchAllData(false);
+          if (isLatestGlucoseStale()) maybeRefreshStaleGlucose();
+          else fetchAllData(false);
         }
       }, CONFIG.REFRESH_INTERVAL_MS);
     }
@@ -2022,6 +2397,7 @@
       if (idleMinutes >= 3) document.body.classList.add('dimmed');
     }, 60 * 1000);
 
+    // ===== watchdog / intervals =====
     // カレンダー日の「変化エッジ」を検知する。
     // 0時ちょうどに単発 setTimeout を仕掛ける方式は、バックグラウンドタブの
     // タイマー間引きや端末スリープで「数分遅れ」または「発火せず」になり得るため、
@@ -2055,7 +2431,27 @@
 
       updateDateControls();
       updateChart({ force: true });  // 新しい当日基準でチャートを全再構築
-      if (state.url) fetchAllData(true); // 8日分フル取得（document.hidden 時は内部で延期）
+      if (state.url) {
+        if (document.hidden) state.pendingFullFetch = true;
+        else fetchAllData(true);
+      }
+    }
+
+    function maybeRefreshStaleGlucose() {
+      const stale = updateGlucoseFreshnessUI();
+      if (!stale) {
+        state.lastStaleRefreshAt = 0;
+        return false;
+      }
+      if (!state.url || document.hidden) return true;
+
+      const retryDue = !state.lastStaleRefreshAt ||
+        Date.now() - state.lastStaleRefreshAt >= CONFIG.STALE_RETRY_INTERVAL_MS;
+      if (retryDue) {
+        showError('Glucose data is over 10 min old. Refreshing latest entry.');
+        refreshLatestEntriesOnly();
+      }
+      return true;
     }
 
     // ライブ監視（ウォッチドッグ）。
@@ -2075,6 +2471,7 @@
       // 猶予満了時に下でクリーン再構築される。
       if (state.lastHistoryInteractionAt > 0 &&
           Date.now() - state.lastHistoryInteractionAt <= CONFIG.LIVE_RETURN_IDLE_MS) {
+        maybeRefreshStaleGlucose();
         return;
       }
 
@@ -2095,6 +2492,10 @@
         return;
       }
 
+      // CGMが10分以上古い間は、全endpointではなくentriesだけを5分間隔で再取得する。
+      // 新しいentryが取れれば次の通常更新から自動的に全体更新へ戻る。
+      if (maybeRefreshStaleGlucose()) return;
+
       // 名目上はライブ（offsetDays === 0）。定期フェッチがバックグラウンド間引き等で
       // 静かに停止している場合に備え、最終フェッチからの経過が更新間隔を大きく超えて
       // いれば明示的に再取得する。
@@ -2106,6 +2507,103 @@
     }
 
     setInterval(liveWatchdogTick, 30 * 1000);
+
+    // ===== browser console self tests =====
+    function runSelfTests() {
+      const results = [];
+      const record = (name, test) => {
+        try {
+          test();
+          results.push({ test: name, result: 'PASS' });
+        } catch (error) {
+          results.push({ test: name, result: `FAIL: ${error.message}` });
+        }
+      };
+      const assert = (condition, message) => {
+        if (!condition) throw new Error(message);
+      };
+      const assertClose = (actual, expected, tolerance, message) => {
+        if (!Number.isFinite(actual) || Math.abs(actual - expected) > tolerance) {
+          throw new Error(`${message}: expected ${expected}, got ${actual}`);
+        }
+      };
+
+      record('normalizeNightscoutUrl', () => {
+        assert(
+          normalizeNightscoutUrl('https://example.com/nightscout?x=1#hash') === 'https://example.com',
+          'originへ正規化されない'
+        );
+        assert(
+          normalizeNightscoutUrl('http://localhost:1337/path') === 'http://localhost:1337',
+          'localhost HTTPが許可されない'
+        );
+        let rejected = false;
+        try { normalizeNightscoutUrl('http://example.com'); } catch (error) { rejected = true; }
+        assert(rejected, '外部HTTPが拒否されない');
+      });
+
+      record('toTimeMs', () => {
+        const expected = Date.parse('2026-01-02T03:04:05.000Z');
+        assert(toTimeMs({ created_at: '2026-01-02T03:04:05.000Z' }, 'created_at') === expected, 'ISO日時を変換できない');
+        assert(toTimeMs({ date: expected }) === expected, '数値timestampを変換できない');
+      });
+
+      record('getScheduledValue', () => {
+        const schedule = [
+          { time: '18:00', value: 3 },
+          { time: '00:00', value: 1 },
+          { timeAsSeconds: 6 * 3600, value: 2 }
+        ];
+        assert(getScheduledValue(schedule, new Date(2026, 0, 1, 7, 0, 0), 0) === 2, '時刻順でないscheduleの選択に失敗');
+      });
+
+      const originalData = state.data;
+      try {
+        const start = new Date(2026, 0, 1, 0, 0, 0);
+        const end = new Date(2026, 0, 1, 1, 0, 0);
+        const tempBasal = {
+          eventType: 'Temp Basal',
+          created_at: new Date(start.getTime() - 30 * 60000).toISOString(),
+          duration: 60,
+          absolute: 2
+        };
+
+        state.data = {
+          entries: [
+            { date: start.getTime(), sgv: 100 },
+            { date: start.getTime() + 10 * 60000, sgv: 200 }
+          ],
+          treatments: [tempBasal],
+          profile: { basal: [{ time: '00:00', value: 1 }] },
+          devicestatus: []
+        };
+
+        record('calcStatsForPeriod', () => {
+          const stats = calcStatsForPeriod(start, end);
+          assertClose(stats.mean, 133.333, 0.01, '時間加重mean');
+          assertClose(stats.tir, 66.667, 0.01, '時間加重TIR');
+          assertClose(stats.tar, 33.333, 0.01, '時間加重TAR');
+        });
+
+        record('getOverlappingTempBasals', () => {
+          assert(getOverlappingTempBasals(start, end, [tempBasal]).length === 1, '期間前開始のTemp Basalを抽出できない');
+        });
+
+        record('calculateIntegralBasal', () => {
+          const basal = calculateIntegralBasal(start, end, [tempBasal], state.data.profile);
+          assertClose(basal, 1.5, 0.001, '期間またぎTemp Basalの積算');
+        });
+      } finally {
+        state.data = originalData;
+      }
+
+      console.table(results);
+      const failed = results.filter(result => result.result !== 'PASS');
+      if (failed.length) throw new Error(`${failed.length} self test(s) failed`);
+      return results;
+    }
+
+    window.runSelfTests = runSelfTests;
 
     window.addEventListener('beforeunload', () => {
       if (fetchInterval) clearInterval(fetchInterval);
