@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Nightscout Analytical Dashboard</title>
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+
   <!-- 外部ライブラリ (deferを統一し、依存関係の順序を厳格化) -->
   <script src="https://cdn.tailwindcss.com" defer></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
@@ -23,7 +27,7 @@
       width: 100vw; height: 100dvh;
       background: #020617; /* Slate 950 */
       color: #e2e8f0;
-      font-family: Inter, system-ui, -apple-system, sans-serif;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       overscroll-behavior: none;
     }
     .panel {
@@ -38,14 +42,81 @@
     }
     .summary-grid {
       display: grid;
-      grid-template-columns: 86px repeat(4, minmax(64px, 1fr));
+      grid-template-columns: 86px repeat(4, minmax(72px, 1fr));
       gap: 4px;
-      min-width: 350px;
+      min-width: 390px;
     }
     @media (max-width: 768px) {
       .summary-grid {
-        grid-template-columns: 78px repeat(4, minmax(58px, 1fr));
+        grid-template-columns: 76px repeat(4, minmax(66px, 1fr));
       }
+    }
+    .summary-range-card {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(71, 85, 105, 0.65);
+      border-radius: 0.5rem;
+      padding: 0.25rem 0.3rem;
+      min-width: 0;
+    }
+    .summary-range-bar {
+      position: relative;
+      display: flex;
+      height: 0.625rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #0f172a;
+      border: 1px solid rgba(51, 65, 85, 0.9);
+    }
+    .summary-range-marker {
+      position: absolute;
+      left: 70%;
+      top: -2px;
+      bottom: -2px;
+      width: 2px;
+      background: rgba(255, 255, 255, 0.75);
+      box-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+      z-index: 2;
+    }
+    .summary-range-meta {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      margin-top: 0.18rem;
+      text-align: center;
+      font-size: 9px;
+      line-height: 1;
+      font-weight: 900;
+    }
+    @media (min-width: 640px) {
+      .summary-range-meta {
+        font-size: 10px;
+      }
+    }
+    .summary-range-meta small {
+      display: block;
+      margin-top: 1px;
+      color: #64748b;
+      font-size: 6.5px;
+      letter-spacing: 0.04em;
+    }
+    .summary-score-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      margin-top: 0.14rem;
+      font-size: 7px;
+      line-height: 1;
+      font-weight: 800;
+      color: #94a3b8;
+    }
+    .summary-score-line b {
+      color: #6ee7b7;
+      font-size: 10px;
+    }
+    .summary-range-card.low-data {
+      opacity: 0.68;
+      border-color: rgba(248, 113, 113, 0.55);
     }
     .loader {
       border: 4px solid rgba(255,255,255,0.1);
@@ -66,7 +137,11 @@
     </div>
     <div class="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
       <!-- Period Toggle Buttons -->
+      <div id="sync-status" class="hidden sm:flex items-center gap-1 rounded border border-slate-700 bg-slate-800/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+        Saved settings
+      </div>
       <div class="flex items-center bg-slate-800 rounded p-0.5 border border-slate-700 text-xs font-bold" id="header-period-controls">
+        <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="2">2W</button>
         <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="4">4W</button>
         <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="8">8W</button>
         <button class="period-btn px-2 sm:px-3 py-1 rounded transition text-slate-300 hover:text-white" data-weeks="12">12W</button>
@@ -83,70 +158,10 @@
   
   <main class="flex-1 flex flex-col gap-3 p-3 min-h-0 overflow-y-auto lg:overflow-hidden">
     
-    <div class="panel flex-none lg:flex-[0.8] flex flex-col min-h-[500px] md:min-h-[400px] lg:min-h-0 p-3 relative" id="summary-panel">
-      <h2 class="text-sm font-bold text-white mb-2 flex items-center gap-1.5 flex-none pl-1 border-b border-slate-700 pb-2">
-        <i data-lucide="bar-chart-2" class="w-4 h-4 text-emerald-400"></i>Statistical Summary
-      </h2>
-
-      <div class="flex-1 grid grid-cols-1 md:grid-cols-[140px_1fr] lg:grid-cols-[170px_1fr] gap-3 min-h-0 overflow-y-auto pr-1">
-        
-        <!-- Left Column: TIR Bars -->
-        <div class="bg-slate-800/60 rounded border border-slate-600/50 p-2 flex flex-col min-h-[140px] md:min-h-0 shadow-inner flex-none md:flex-1">
-          <div id="label-tir" class="text-[12px] font-black text-green-400 tracking-widest text-center leading-none mt-1 mb-2">TIR</div>
-          <div class="grid grid-cols-4 text-center text-[10px] font-black text-slate-300 mb-2 gap-1 flex-none">
-            <span>TD</span><span>YD</span><span>7D</span><span id="summary-period-label" class="text-blue-300">4W</span>
-          </div>
-          <div class="flex-1 grid grid-cols-4 gap-1 items-end min-h-[50px] px-1 pb-1">
-            <!-- Today -->
-            <div class="flex flex-col items-center h-full min-h-0">
-              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
-                <div id="td-tar" class="bg-yellow-400 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="td-tir" class="bg-green-400 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="td-tbr" class="bg-red-500 w-full transition-all duration-500" style="height:0%"></div>
-              </div>
-              <span id="td-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-400 mt-1">0%</span>
-            </div>
-            <!-- Yesterday -->
-            <div class="flex flex-col items-center h-full min-h-0 opacity-90">
-              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
-                <div id="yd-tar" class="bg-yellow-500 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="yd-tir" class="bg-green-500 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="yd-tbr" class="bg-red-600 w-full transition-all duration-500" style="height:0%"></div>
-              </div>
-              <span id="yd-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-500 mt-1">0%</span>
-            </div>
-            <!-- 7 Days -->
-            <div class="flex flex-col items-center h-full min-h-0 opacity-80">
-              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
-                <div id="7d-tar" class="bg-yellow-500 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="7d-tir" class="bg-green-500 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="7d-tbr" class="bg-red-600 w-full transition-all duration-500" style="height:0%"></div>
-              </div>
-              <span id="7d-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-500 mt-1">0%</span>
-            </div>
-            <!-- Period -->
-            <div class="flex flex-col items-center h-full min-h-0 opacity-70">
-              <div class="w-4 flex-1 rounded-full bg-slate-900 flex flex-col overflow-hidden justify-end border border-slate-700 min-h-[20px]">
-                <div id="pw-tar" class="bg-yellow-600 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="pw-tir" class="bg-green-600 w-full transition-all duration-500" style="height:0%"></div>
-                <div id="pw-tbr" class="bg-red-700 w-full transition-all duration-500" style="height:0%"></div>
-              </div>
-              <span id="pw-tir-val" class="flex-none text-[10px] sm:text-[11px] font-black text-green-600 mt-1">0%</span>
-            </div>
-          </div>
-          <div class="w-full border-t border-slate-700/60 mt-1 pt-1 flex-none">
-            <div id="label-tir-score" class="text-[9px] font-black text-slate-400 tracking-widest text-center leading-none mb-1">SCORE</div>
-            <div class="grid grid-cols-4 text-center leading-none gap-1">
-              <span id="td-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-300">0</span>
-              <span id="yd-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-400">0</span>
-              <span id="7d-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-500">0</span>
-              <span id="pw-tir-score" class="text-[12px] sm:text-[14px] font-black text-emerald-600">0</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right Column: Detail Stats -->
-        <div class="flex-1 flex flex-col bg-slate-800/40 rounded border border-slate-600/50 px-2 sm:px-3 py-2 min-h-0 gap-2 overflow-x-auto overflow-y-hidden select-text">
+    <div class="panel flex-none lg:flex-[0.8] flex flex-col min-h-[500px] md:min-h-[400px] lg:min-h-0 p-2 relative" id="summary-panel">
+      <div class="flex-1 min-h-0 overflow-y-auto pr-1">
+        <!-- Integrated Summary: Range + Detail Stats -->
+        <div class="flex-1 flex flex-col px-1 sm:px-2 py-0 min-h-0 gap-1.5 overflow-x-auto select-text">
           <div class="grid summary-grid items-end border-b border-slate-600/50 pb-1 flex-none">
             <div></div>
             <div class="text-center text-[10px] sm:text-[12px] font-black text-white tracking-widest leading-none">Today</div>
@@ -155,49 +170,125 @@
             <div class="text-center text-[10px] sm:text-[12px] font-bold text-blue-300 tracking-widest leading-none" id="summary-period-title">-- Days</div>
           </div>
 
-          <!-- AVG BG -->
+          <!-- Integrated Range Quality -->
+          <div class="grid summary-grid items-stretch border-b border-slate-700/50 pb-2 flex-none">
+            <div class="flex flex-col justify-center pl-1 leading-none">
+              <span id="label-tir" class="text-[13px] sm:text-[15px] text-green-400 font-black uppercase tracking-widest">TIR</span>
+              <span class="text-[8px] text-slate-500 font-bold mt-1">TBR / TAR / Score</span>
+            </div>
+            <div id="td-range-card" class="summary-range-card" title="Today so far. Single-day GMI is a reference value only.">
+              <div class="summary-range-bar">
+                <div id="td-tbr54" class="bg-red-900 transition-all duration-500" style="width:0%"></div>
+                <div id="td-tbr70" class="bg-red-500 transition-all duration-500" style="width:0%"></div>
+                <div id="td-tir" class="bg-green-400 transition-all duration-500" style="width:0%"></div>
+                <div id="td-tar-mid" class="bg-yellow-400 transition-all duration-500" style="width:0%"></div>
+                <div id="td-tar250" class="bg-orange-700 transition-all duration-500" style="width:0%"></div>
+                <div class="summary-range-marker" title="TIR target 70%"></div>
+              </div>
+              <div class="summary-range-meta">
+                <span class="text-red-300"><b id="td-tbr-val">0%</b><small>TBR</small></span>
+                <span class="text-green-300"><b id="td-tir-val">0%</b><small>TIR</small></span>
+                <span class="text-yellow-300"><b id="td-tar-val">0%</b><small>TAR</small></span>
+              </div>
+              <div class="summary-score-line"><span>Score</span><b id="td-tir-score">0</b></div>
+            </div>
+            <div id="yd-range-card" class="summary-range-card" title="Single-day GMI is a reference value only.">
+              <div class="summary-range-bar">
+                <div id="yd-tbr54" class="bg-red-900 transition-all duration-500" style="width:0%"></div>
+                <div id="yd-tbr70" class="bg-red-500 transition-all duration-500" style="width:0%"></div>
+                <div id="yd-tir" class="bg-green-500 transition-all duration-500" style="width:0%"></div>
+                <div id="yd-tar-mid" class="bg-yellow-500 transition-all duration-500" style="width:0%"></div>
+                <div id="yd-tar250" class="bg-orange-700 transition-all duration-500" style="width:0%"></div>
+                <div class="summary-range-marker" title="TIR target 70%"></div>
+              </div>
+              <div class="summary-range-meta">
+                <span class="text-red-300"><b id="yd-tbr-val">0%</b><small>TBR</small></span>
+                <span class="text-green-300"><b id="yd-tir-val">0%</b><small>TIR</small></span>
+                <span class="text-yellow-300"><b id="yd-tar-val">0%</b><small>TAR</small></span>
+              </div>
+              <div class="summary-score-line"><span>Score</span><b id="yd-tir-score">0</b></div>
+            </div>
+            <div id="7d-range-card" class="summary-range-card">
+              <div class="summary-range-bar">
+                <div id="7d-tbr54" class="bg-red-900 transition-all duration-500" style="width:0%"></div>
+                <div id="7d-tbr70" class="bg-red-500 transition-all duration-500" style="width:0%"></div>
+                <div id="7d-tir" class="bg-green-500 transition-all duration-500" style="width:0%"></div>
+                <div id="7d-tar-mid" class="bg-yellow-500 transition-all duration-500" style="width:0%"></div>
+                <div id="7d-tar250" class="bg-orange-700 transition-all duration-500" style="width:0%"></div>
+                <div class="summary-range-marker" title="TIR target 70%"></div>
+              </div>
+              <div class="summary-range-meta">
+                <span class="text-red-300"><b id="7d-tbr-val">0%</b><small>TBR</small></span>
+                <span class="text-green-300"><b id="7d-tir-val">0%</b><small>TIR</small></span>
+                <span class="text-yellow-300"><b id="7d-tar-val">0%</b><small>TAR</small></span>
+              </div>
+              <div class="summary-score-line"><span>Score</span><b id="7d-tir-score">0</b></div>
+            </div>
+            <div id="pw-range-card" class="summary-range-card">
+              <div class="summary-range-bar">
+                <div id="pw-tbr54" class="bg-red-900 transition-all duration-500" style="width:0%"></div>
+                <div id="pw-tbr70" class="bg-red-500 transition-all duration-500" style="width:0%"></div>
+                <div id="pw-tir" class="bg-green-500 transition-all duration-500" style="width:0%"></div>
+                <div id="pw-tar-mid" class="bg-yellow-500 transition-all duration-500" style="width:0%"></div>
+                <div id="pw-tar250" class="bg-orange-700 transition-all duration-500" style="width:0%"></div>
+                <div class="summary-range-marker" title="TIR target 70%"></div>
+              </div>
+              <div class="summary-range-meta">
+                <span class="text-red-300"><b id="pw-tbr-val">0%</b><small>TBR</small></span>
+                <span class="text-green-300"><b id="pw-tir-val">0%</b><small>TIR</small></span>
+                <span class="text-yellow-300"><b id="pw-tar-val">0%</b><small>TAR</small></span>
+              </div>
+              <div class="summary-score-line"><span>Score</span><b id="pw-tir-score">0</b></div>
+            </div>
+          </div>
+
+          <!-- AVG + GMI -->
           <div class="grid summary-grid items-center flex-none">
-            <div class="text-[10px] sm:text-[12px] text-slate-300 font-bold uppercase pl-1 break-words">AVG BG</div>
-            <div class="text-center font-black text-white text-sm sm:text-lg leading-none break-all"><span id="td-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="td-cv">--</span>%</span></div>
-            <div class="text-center font-bold text-slate-300 text-sm sm:text-lg leading-none break-all"><span id="yd-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1 block xl:inline">CV <span id="yd-cv">--</span>%</span></div>
-            <div class="text-center font-bold text-slate-400 text-sm sm:text-lg leading-none break-all"><span id="7d-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="7d-cv">--</span>%</span></div>
-            <div class="text-center font-bold text-slate-500 text-sm sm:text-lg leading-none break-all"><span id="pw-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1 block xl:inline">CV <span id="pw-cv">--</span>%</span></div>
+            <div class="text-[10px] sm:text-[12px] text-slate-300 font-bold uppercase pl-1 break-words">AVG / GMI</div>
+            <div class="text-center leading-none break-all">
+              <div class="font-black text-white text-sm sm:text-lg"><span id="td-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1">CV <span id="td-cv">--</span>%</span></div>
+              <div class="font-black text-pink-300 text-xs sm:text-sm mt-0.5"><span id="td-gmi">0.0</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="td-ea1c">0.0</span></div>
+            </div>
+            <div class="text-center leading-none break-all">
+              <div class="font-bold text-slate-300 text-sm sm:text-lg"><span id="yd-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1">CV <span id="yd-cv">--</span>%</span></div>
+              <div class="font-bold text-pink-400 text-xs sm:text-sm mt-0.5"><span id="yd-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="yd-ea1c">0.0</span></div>
+            </div>
+            <div class="text-center leading-none break-all">
+              <div class="font-bold text-slate-400 text-sm sm:text-lg"><span id="7d-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-600 ml-1">CV <span id="7d-cv">--</span>%</span></div>
+              <div class="font-bold text-pink-500 text-xs sm:text-sm mt-0.5"><span id="7d-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="7d-ea1c">0.0</span></div>
+            </div>
+            <div class="text-center leading-none break-all">
+              <div class="font-bold text-slate-300 text-sm sm:text-lg"><span id="pw-mean">0</span><span class="text-[8px] sm:text-[9px] text-slate-500 ml-1">CV <span id="pw-cv">--</span>%</span></div>
+              <div class="font-bold text-pink-400 text-xs sm:text-sm mt-0.5"><span id="pw-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="pw-ea1c">0.0</span></div>
+            </div>
           </div>
 
-          <!-- GMI -->
-          <div class="grid summary-grid items-center border-t border-slate-700/50 pt-1.5 flex-none">
-            <div class="text-[10px] sm:text-[12px] text-pink-400 font-bold uppercase pl-1 break-words">GMI/Adj</div>
-            <div class="text-center font-black text-pink-300 text-xs sm:text-sm leading-none break-all"><span id="td-gmi">0.0</span><span class="text-[9px] text-slate-500 mx-0.5">/</span><span id="td-ea1c">0.0</span></div>
-            <div class="text-center font-bold text-pink-400 text-xs sm:text-sm leading-none break-all"><span id="yd-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="yd-ea1c">0.0</span></div>
-            <div class="text-center font-bold text-pink-500 text-xs sm:text-sm leading-none break-all"><span id="7d-gmi">0.0</span><span class="text-[9px] text-slate-600 mx-0.5">/</span><span id="7d-ea1c">0.0</span></div>
-            <div class="text-center font-bold text-pink-600 text-xs sm:text-sm leading-none break-all"><span id="pw-gmi">0.0</span><span class="text-[9px] text-slate-700 mx-0.5">/</span><span id="pw-ea1c">0.0</span></div>
-          </div>
-
-          <!-- TDD -->
-          <div class="grid summary-grid items-center bg-blue-900/20 rounded py-1.5 border border-blue-800/30 mt-1 flex-none">
-            <div class="text-[10px] sm:text-[12px] text-blue-400 font-bold uppercase pl-1 break-words">TDD</div>
-            <div class="text-center font-black text-blue-200 text-sm sm:text-base leading-none break-all"><span id="td-tdd">0.0</span><span class="text-[9px] text-blue-400 ml-0.5">U</span></div>
-            <div class="text-center font-bold text-blue-300 text-sm sm:text-base leading-none break-all"><span id="yd-tdd">0.0</span></div>
-            <div class="text-center font-bold text-blue-400 text-sm sm:text-base leading-none break-all"><span id="7d-tdd">0.0</span></div>
-            <div class="text-center font-bold text-blue-500 text-sm sm:text-base leading-none break-all"><span id="pw-tdd">0.0</span></div>
-          </div>
-
-          <!-- Insulin Bars -->
-          <div class="grid summary-grid items-center text-[10px] leading-none mt-1 flex-none">
-            <div></div>
-            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50"><div id="td-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="td-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="td-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
-            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50"><div id="yd-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="yd-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="yd-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
-            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-75"><div id="7d-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="7d-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="7d-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
-            <div class="px-1"><div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-60"><div id="pw-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="pw-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="pw-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div></div>
-          </div>
-
-          <!-- Insulin Values: Single Line -->
-          <div class="grid summary-grid items-center text-[9px] sm:text-[10px] leading-none text-center flex-none">
-            <div class="text-left text-slate-400 font-bold tracking-tight pl-1 break-words">Basal/CB/Bolus</div>
-            <div class="tracking-tighter break-all"><span id="td-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-300" id="td-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-300" id="td-bolus">0.0</span></div>
-            <div class="tracking-tighter break-all"><span id="yd-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-400" id="yd-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-400" id="yd-bolus">0.0</span></div>
-            <div class="tracking-tighter break-all"><span id="7d-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-500" id="7d-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-500" id="7d-bolus">0.0</span></div>
-            <div class="tracking-tighter break-all"><span id="pw-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-600" id="pw-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-600" id="pw-bolus">0.0</span></div>
+          <!-- TDD + Insulin Breakdown -->
+          <div class="grid summary-grid items-center bg-blue-900/20 rounded py-1.5 border border-blue-800/30 mt-0.5 flex-none">
+            <div class="flex flex-col leading-none pl-1 break-words">
+              <span class="text-[10px] sm:text-[12px] text-blue-400 font-bold uppercase">TDD</span>
+              <span class="text-[8px] sm:text-[9px] text-slate-400 mt-0.5 font-medium">Basal/CB/Bolus</span>
+            </div>
+            <div class="text-center leading-none break-all px-1">
+              <div class="font-black text-blue-200 text-sm sm:text-base"><span id="td-tdd">0.0</span><span class="text-[9px] text-blue-400 ml-0.5">U</span></div>
+              <div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 mt-1"><div id="td-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="td-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="td-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div>
+              <div class="text-[9px] sm:text-[10px] tracking-tighter mt-1"><span id="td-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-300" id="td-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-300" id="td-bolus">0.0</span></div>
+            </div>
+            <div class="text-center leading-none break-all px-1">
+              <div class="font-bold text-blue-300 text-sm sm:text-base"><span id="yd-tdd">0.0</span></div>
+              <div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 mt-1"><div id="yd-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="yd-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="yd-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div>
+              <div class="text-[9px] sm:text-[10px] tracking-tighter mt-1"><span id="yd-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-400" id="yd-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-400" id="yd-bolus">0.0</span></div>
+            </div>
+            <div class="text-center leading-none break-all px-1">
+              <div class="font-bold text-blue-400 text-sm sm:text-base"><span id="7d-tdd">0.0</span></div>
+              <div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-90 mt-1"><div id="7d-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="7d-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="7d-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div>
+              <div class="text-[9px] sm:text-[10px] tracking-tighter mt-1"><span id="7d-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-500" id="7d-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-500" id="7d-bolus">0.0</span></div>
+            </div>
+            <div class="text-center leading-none break-all px-1">
+              <div class="font-bold text-blue-300 text-sm sm:text-base"><span id="pw-tdd">0.0</span></div>
+              <div class="flex h-2.5 rounded-full overflow-hidden bg-slate-800 border border-slate-700/50 opacity-80 mt-1"><div id="pw-basal-bar" class="bg-slate-400 h-full transition-all"></div><div id="pw-cb-bar" class="bg-purple-400 h-full transition-all"></div><div id="pw-bolus-bar" class="bg-cyan-400 h-full transition-all"></div></div>
+              <div class="text-[9px] sm:text-[10px] tracking-tighter mt-1"><span id="pw-basal">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-purple-400" id="pw-cb">0.0</span><span class="text-slate-600 mx-[1px]">/</span><span class="text-cyan-400" id="pw-bolus">0.0</span></div>
+            </div>
           </div>
 
           <!-- CARBS -->
@@ -206,7 +297,7 @@
             <div class="text-center font-black text-yellow-300 text-sm sm:text-base leading-none break-all"><span id="td-carbs">0</span><span class="text-[9px] text-yellow-500 ml-0.5">g</span></div>
             <div class="text-center font-bold text-yellow-400 text-sm sm:text-base leading-none break-all"><span id="yd-carbs">0</span></div>
             <div class="text-center font-bold text-yellow-500 text-sm sm:text-base leading-none break-all"><span id="7d-carbs">0</span></div>
-            <div class="text-center font-bold text-yellow-600 text-sm sm:text-base leading-none break-all"><span id="pw-carbs">0</span></div>
+            <div class="text-center font-bold text-yellow-400 text-sm sm:text-base leading-none break-all"><span id="pw-carbs">0</span></div>
           </div>
 
           <!-- CR -->
@@ -215,7 +306,7 @@
             <div class="text-center font-black text-orange-200 text-xs sm:text-sm leading-none break-all"><span id="td-cr-bolus">0.0</span><span class="text-slate-500 text-[9px] mx-0.5">/</span><span id="td-cr-total">0.0</span></div>
             <div class="text-center font-bold text-orange-300 text-xs sm:text-sm leading-none break-all"><span id="yd-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="yd-cr-total">0.0</span></div>
             <div class="text-center font-bold text-orange-500 text-xs sm:text-sm leading-none break-all"><span id="7d-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="7d-cr-total">0.0</span></div>
-            <div class="text-center font-bold text-orange-600 text-xs sm:text-sm leading-none break-all"><span id="pw-cr-bolus">0.0</span><span class="text-slate-700 text-[9px] mx-0.5">/</span><span id="pw-cr-total">0.0</span></div>
+            <div class="text-center font-bold text-orange-400 text-xs sm:text-sm leading-none break-all"><span id="pw-cr-bolus">0.0</span><span class="text-slate-600 text-[9px] mx-0.5">/</span><span id="pw-cr-total">0.0</span></div>
           </div>
         </div>
       </div>
@@ -392,6 +483,7 @@
           <div>
             <label class="block text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Analysis Period</label>
             <select id="period-weeks" class="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 font-bold cursor-pointer appearance-none">
+              <option value="2">2 Weeks</option>
               <option value="4" selected>4 Weeks</option>
               <option value="8">8 Weeks</option>
               <option value="12">12 Weeks</option>
@@ -426,12 +518,13 @@
      <div class="loader mb-6"></div>
      <div class="text-white text-lg font-black tracking-widest uppercase mb-2">Fetching Data</div>
      <div class="text-slate-400 text-sm font-bold text-center px-4 max-w-sm">
-       Downloading up to 12 weeks of historical data.<br>This may take a few moments.
+       Downloading up to 24 weeks of historical data.<br>This may take a few moments.
      </div>
   </div>
 
   <script>
     var chartInstances = {};
+    var APP_FONT_STACK = 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
 
     window.addEventListener('resize', function() {
       Object.values(chartInstances).forEach(function(chart) {
@@ -440,6 +533,11 @@
     });
 
     window.addEventListener('DOMContentLoaded', function() {
+      // CGM is normally sampled every 5 minutes: 12 readings/hour * 24h = 288/day.
+      var EXPECTED_CGM_READINGS_PER_DAY = 288;
+      var DATA_COVERAGE_LOW_PCT = 70;
+      var MAX_PERIOD_WEEKS = 12;
+      var FETCH_LOOKBACK_WEEKS = MAX_PERIOD_WEEKS * 2;
       
     // --- Clinical A1c Calculator ---
       //
@@ -525,6 +623,7 @@
         savedToken = localStorage.getItem('ns_token') || '';
         savedTargetMode = localStorage.getItem('ns_targetMode') || 'tir';
         savedPeriodWeeks = parseInt(localStorage.getItem('ns_periodWeeks') || '4', 10);
+        if ([2, 4, 8, 12].indexOf(savedPeriodWeeks) === -1) savedPeriodWeeks = 4;
       } catch(e) {
         console.warn("localStorage accessibility issue.");
       }
@@ -586,6 +685,14 @@
       function hideLoading() {
         document.getElementById('loading-overlay').classList.add('hidden');
         document.getElementById('loading-overlay').classList.remove('flex');
+      }
+
+      function updateSyncStatus(text) {
+        var el = document.getElementById('sync-status');
+        if (!el) return;
+        el.textContent = text;
+        el.classList.remove('hidden');
+        el.classList.add('sm:flex');
       }
 
       function formatShortDate(ms) {
@@ -677,6 +784,8 @@
       function calcStatsForPeriod(startDate, endDate) {
         var startMs = startDate.getTime();
         var endMs = endDate.getTime();
+        var effectiveEndMs = Math.min(endMs, Date.now());
+        var expectedReadings = Math.max(1, Math.ceil(Math.max(0, effectiveEndMs - startMs + 1) / (86400000 / EXPECTED_CGM_READINGS_PER_DAY)));
         
         var periodEntries = state.entries.filter(function(e) { return e.date >= startMs && e.date < endMs; });
         var periodTreats = state.treatments.filter(function(t) { var d = toTimeMs(t, 'created_at'); return d >= startMs && d < endMs; });
@@ -686,6 +795,8 @@
         
         var values = periodEntries.map(function(e) { return e.sgv; });
         var total = values.length;
+        var coveragePct = Math.min(100, total / expectedReadings * 100);
+        var lowData = coveragePct < DATA_COVERAGE_LOW_PCT;
         
         if (total > 0) {
           tbr54 = values.filter(function(v) { return v < 54; }).length / total * 100;
@@ -727,20 +838,41 @@
         var a1cResult = a1cCalculator.analyze(periodEntries);
         
         return { 
-          tbr: tbr, tir: tir, tar: tar, tirScore: tirScore, 
+          tbr: tbr, tir: tir, tar: tar, tbr54: tbr54, tbr70: tbr70, tar250: tar250, tirScore: tirScore, 
+          readings: total, expectedReadings: expectedReadings, coveragePct: coveragePct, lowData: lowData,
           carbs: totalCarbs, bolus: bolus, cb: cb, basal: basal, tdd: tdd, 
           mean: mean, cv: cv, crBolus: crBolus, crTotal: crTotal, 
           gmi: a1cResult.gmi, adjustedGmi: a1cResult.adjustedGmi 
         };
       }
 
+      function setWidthPct(id, value) {
+        safeSetStyle(id, 'width', Math.min(100, Math.max(0, value || 0)) + '%');
+      }
+
+      function setLowDataState(prefix, stats) {
+        var card = document.getElementById(prefix + '-range-card');
+        if (card) {
+          card.classList.toggle('low-data', !!stats.lowData);
+          card.title = (prefix === 'td' ? 'Today so far. ' : '') +
+            'Readings: ' + stats.readings + '/' + stats.expectedReadings +
+            '. ' +
+            (prefix === 'td' || prefix === 'yd' ? 'Single-day GMI is a reference value only.' : '');
+        }
+      }
+
       function renderStats(prefix, stats, days) {
-        safeSetStyle(prefix + '-tbr', 'height', Math.min(100, Math.max(0, stats.tbr)) + '%');
-        safeSetStyle(prefix + '-tir', 'height', Math.min(100, Math.max(0, stats.tir)) + '%');
-        safeSetStyle(prefix + '-tar', 'height', Math.min(100, Math.max(0, stats.tar)) + '%');
+        setWidthPct(prefix + '-tbr54', stats.tbr54);
+        setWidthPct(prefix + '-tbr70', stats.tbr70);
+        setWidthPct(prefix + '-tir', stats.tir);
+        setWidthPct(prefix + '-tar-mid', Math.max(0, stats.tar - stats.tar250));
+        setWidthPct(prefix + '-tar250', stats.tar250);
         
+        safeSetText(prefix + '-tbr-val', Math.round(stats.tbr) + '%');
         safeSetText(prefix + '-tir-val', Math.round(stats.tir) + '%');
+        safeSetText(prefix + '-tar-val', Math.round(stats.tar) + '%');
         safeSetText(prefix + '-tir-score', Math.round(stats.tirScore).toString());
+        setLowDataState(prefix, stats);
         
         var tdd = stats.tdd / days;
         var basal = stats.basal / days;
@@ -760,6 +892,13 @@
         safeSetText(prefix + '-cr-total', stats.crTotal.toFixed(1));
         safeSetText(prefix + '-gmi', stats.gmi.toFixed(1));
         safeSetText(prefix + '-ea1c', stats.adjustedGmi.toFixed(1));
+
+        if (prefix === 'td' || prefix === 'yd') {
+          var gmiEl = document.getElementById(prefix + '-gmi');
+          if (gmiEl && gmiEl.parentElement) {
+            gmiEl.parentElement.title = 'Single-day GMI/Adj is a reference value; use 14+ days for a more stable estimate.';
+          }
+        }
         
         if (tdd > 0) {
           safeSetStyle(prefix + '-basal-bar', 'width', (basal / tdd * 100) + '%');
@@ -776,8 +915,6 @@
         var targetLabel = state.targetMode === 'titr' ? 'TITR' : 'TIR';
         var labelTir = document.getElementById('label-tir');
         if (labelTir) labelTir.textContent = targetLabel;
-        var labelTirScore = document.getElementById('label-tir-score');
-        if (labelTirScore) labelTirScore.textContent = targetLabel + ' SCORE';
 
         var baseEnd = new Date(state.dataEndDate);
         var todayStart = new Date(baseEnd.getFullYear(), baseEnd.getMonth(), baseEnd.getDate(), 0, 0, 0, 0);
@@ -790,7 +927,6 @@
         var periodDays = state.periodWeeks * 7;
         var periodStart = new Date(todayStart.getTime() - ((periodDays - 1) * 86400000));
 
-        safeSetText('summary-period-label', state.periodWeeks + 'W');
         safeSetText('summary-period-title', periodDays + ' Days');
 
         renderStats('td', calcStatsForPeriod(todayStart, baseEnd), 1);
@@ -817,8 +953,7 @@
         var now = new Date();
         var endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
         
-        var MAX_PERIOD_WEEKS = 12;
-        var totalDaysToFetch = MAX_PERIOD_WEEKS * 7 * 2;
+        var totalDaysToFetch = FETCH_LOOKBACK_WEEKS * 7;
         var startDate = new Date(endDate.getTime() - totalDaysToFetch * 86400000 + 1);
         
         var buildQs = function(path, dateField) {
@@ -866,6 +1001,7 @@
           state.selectedDate = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 0, 0, 0, 0).getTime();
           
           hideLoading();
+          updateSyncStatus('Fetched ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           updateAllDashboards();
           
         } catch (err) {
@@ -879,7 +1015,7 @@
       // --- Chart & Interaction Logistics ---
       if (typeof Chart !== 'undefined') {
         Chart.defaults.color = '#94a3b8';
-        Chart.defaults.font.family = 'Inter, sans-serif';
+        Chart.defaults.font.family = APP_FONT_STACK;
       }
 
       function getTargetAnnotation() {
@@ -909,7 +1045,7 @@
       }
       function getTickFont(ctx) {
          var yMax = state.targetMode === 'titr' ? 140 : 180;
-         return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? { size: 10, weight: '900' } : { size: 9, weight: 'bold' };
+         return (ctx.tick && (ctx.tick.value === 70 || ctx.tick.value === yMax)) ? { family: APP_FONT_STACK, size: 10, weight: '900' } : { family: APP_FONT_STACK, size: 9, weight: 'bold' };
       }
       function getTickColor(ctx) {
          var yMax = state.targetMode === 'titr' ? 140 : 180;
@@ -947,7 +1083,7 @@
                 type: 'time', min: timeStart, max: timeEnd,
                 time: { unit: 'hour', displayFormats: { hour: 'HH:mm' } },
                 grid: { color: 'rgba(51,65,85,0.4)' },
-                ticks: { font: { size: 10, weight: 'bold' } }
+                ticks: { font: { family: APP_FONT_STACK, size: 10, weight: 'bold' } }
               },
               y: {
                 min: 40, max: Math.max(250, maxDataY + 20),
@@ -1021,7 +1157,7 @@
             scales: {
               x: {
                 type: 'linear', min: 0, max: 24,
-                ticks: { stepSize: 3, callback: function(v) { return v + ':00'; }, font: { size: 10, weight: 'bold' } },
+                ticks: { stepSize: 3, callback: function(v) { return v + ':00'; }, font: { family: APP_FONT_STACK, size: 10, weight: 'bold' } },
                 grid: { color: 'rgba(51,65,85,0.4)' }
               },
               y: {
@@ -1242,6 +1378,7 @@
         var newToken = document.getElementById('ns-token').value.trim();
         var newTargetMode = document.getElementById('target-mode').value;
         var newPeriodWeeks = parseInt(document.getElementById('period-weeks').value, 10);
+        if ([2, 4, 8, 12].indexOf(newPeriodWeeks) === -1) newPeriodWeeks = 4;
 
         var requiresFetch = (state.url !== newUrl) || (state.token !== newToken);
 
@@ -1338,6 +1475,8 @@
       if (!state.url) {
         showModal(true);
       } else {
+        hideModal();
+        updateSyncStatus('Saved settings');
         var blBadge = document.getElementById('bl-period-badge-full');
         if (blBadge) blBadge.textContent = state.periodWeeks + " Weeks";
         var brBadge = document.getElementById('br-period-badge-full');
